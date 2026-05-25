@@ -49,8 +49,8 @@
 *   **JSON 欄位格式：** API 傳輸的 JSON Data，其 Key 統一使用 **小駝峰 (camelCase)**。後端收到的資料需自行對接或轉換為資料庫的 `snake_case`。
     *   *前端發送/後端回傳範例：* `{"userId": 123, "trainNo": "TAROKO-408", "bookingDate": "2026-05-22"}`
 *   **統一 API 回應格式：** 所有後端 API 的回傳不論成功或失敗，結構必須一致：
-    
-```json
+
+    ```json
     {
       "success": true, // 或 false
       "message": "操作成功說明或錯誤訊息",
@@ -68,7 +68,21 @@
 
 ---
 
-## 5. 輸出成果要求
+## 5. 特定專案業務邏輯與架構規定 (Project-Specific Constraints & Rules)
+
+為確保資料庫設計與業務邏輯的一致性，需嚴格遵守以下特定條件：
+
+1.  **建表與外鍵約束 (Table Creation & FK Constraints)：** 建立資料表 (`CREATE TABLE`) 時，**先不加** `REFERENCES` 限制。等待所有相關資料表皆建立完成後，再統一使用 `ALTER TABLE` 補上外鍵約束，避免依賴順序問題。
+2.  **Payments 表格外鍵放寬 (Payments Table FK)：** 在 `payments` 表格中的 `booking_id` 欄位**不要**加上強硬的 `REFERENCES` 約束，請將其視為純字串的**邏輯外鍵**來處理。
+3.  **地鐵換線時間 (Metro Transfer Time)：** 計算或處理路線時，**不需要考慮**地鐵站內換線的等車時間。
+4.  **AI 供應商統一 (AI Provider)：** 團隊使用的 AI 供應商統一為 **Ollama**，所有相關的配置或程式碼實作應以此為準。
+5.  **車站 ID 格式 (Station ID Format)：** 車站 ID (`station_id`) 的格式如 `"MS01"` 或 `"NR01"`，資料庫欄位型態統一設定為 `VARCHAR(10)`。
+6.  **時刻表與停靠站設計 (Schedules & Stops)：** 關於捷運 (`metro_schedules`) 與火車 (`national_rail_schedules`) 的時刻表及路線停靠站點順序，**必須使用單獨的「停靠站關聯表」**（Stop Relationship Table）來儲存與關聯，不可以直接寫死在時刻表內。
+7.  **密碼與鹽值獨立儲存 (Password & Salt Separation)：** 基於資安最佳實踐，使用者的登入密碼絕對不可與一般基本資料（如姓名、Email 等）混存在同一張主使用者表中。必須額外建立專屬的憑證資料表（例如命名為 `user_credentials`），並透過 `user_id` 作為外鍵與使用者主表關聯。該表必須包含 `password_hash`（經過雜湊處理的密碼）與 `salt`（隨機生成的鹽值）兩個欄位。這樣做的好處是能獨立管理敏感憑證的存取權限，即使一般使用者資料表遭洩漏，也能將密碼外洩的風險降至最低。
+
+---
+
+## 6. 輸出成果要求
 
 當我提供你專案開發任務時，請遵循以下模式回覆：
 1.  **完整且乾淨的程式碼：** 程式碼內附上**繁體中文註解**，特別是複雜的 SQL 邏輯或資料轉換。
