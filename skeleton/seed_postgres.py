@@ -403,7 +403,7 @@ def seed_ticket_types(cur):
     print(f"  - Seeded {inserted} rows into {table}")
 
 
-    def seed_booking_rules(cur):
+def seed_booking_rules(cur):
     data = load("booking_rules.json") # 注意：若這是一個單一的大物件，你需要調整載入方式
     
     table = "booking_rules"
