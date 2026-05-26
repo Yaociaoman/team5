@@ -54,67 +54,377 @@ def insert_many(cur, table, columns, rows):
 
 # ── seeders ──────────────────────────────────────────────────────────────────
 
+import json
+
 def seed_metro_stations(cur):
     data = load("metro_stations.json")
-    # TODO: Design your table schema, then implement the INSERT logic here.
-    # Each item in `data` is a dict — inspect the JSON to see available fields.
-    pass
+    
+    table = "metro_stations"
+    columns = [
+        "station_id", "name", "lines", "is_interchange_metro", 
+        "interchange_metro_lines", "is_interchange_national_rail", 
+        "interchange_national_rail_station_id", "adjacent_stations"
+    ]
+    
+    rows = []
+    for item in data:
+        row = (
+            item["station_id"],
+            item["name"],
+            item["lines"],
+            item["is_interchange_metro"],
+            item["interchange_metro_lines"],
+            item["is_interchange_national_rail"],
+            item["interchange_national_rail_station_id"],
+            json.dumps(item["adjacent_stations"]) # 將 JSON 物件轉為字串
+        )
+        rows.append(row)
+        
+    inserted = insert_many(cur, table, columns, rows)
+    print(f"  - Seeded {inserted} rows into {table}")
 
 
 def seed_national_rail_stations(cur):
     data = load("national_rail_stations.json")
-    # TODO: Design your table schema, then implement the INSERT logic here.
-    pass
-
+    
+    table = "national_rail_stations"
+    columns = [
+        "station_id",
+        "name",
+        "lines",
+        "is_interchange_national_rail",
+        "interchange_national_rail_lines",
+        "is_interchange_metro",
+        "interchange_metro_station_id",
+        "adjacent_stations"
+    ]
+    
+    rows = []
+    for item in data:
+        row = (
+            item["station_id"],
+            item["name"],
+            item["lines"],
+            item["is_interchange_national_rail"],
+            item["interchange_national_rail_lines"],
+            item["is_interchange_metro"],
+            item["interchange_metro_station_id"],
+            json.dumps(item["adjacent_stations"])
+        )
+        rows.append(row)
+        
+    inserted = insert_many(cur, table, columns, rows)
+    print(f"  - Seeded {inserted} rows into {table}")
+    
 
 def seed_metro_schedules(cur):
     data = load("metro_schedules.json")
-    # TODO: Design your table schema, then implement the INSERT logic here.
-    pass
+    
+    table = "metro_schedules"
+    columns = [
+        "schedule_id",
+        "line",
+        "direction",
+        "origin_station_id",
+        "destination_station_id",
+        "stops_in_order",
+        "first_train_time",
+        "last_train_time",
+        "travel_time_from_origin_min",
+        "base_fare_usd",
+        "per_stop_rate_usd",
+        "frequency_min",
+        "operates_on"
+    ]
+    
+    rows = []
+    for item in data:
+        row = (
+            item["schedule_id"],
+            item["line"],
+            item["direction"],
+            item["origin_station_id"],
+            item["destination_station_id"],
+            item["stops_in_order"],
+            item["first_train_time"],
+            item["last_train_time"],
+            json.dumps(item["travel_time_from_origin_min"]),  # 轉成 JSON 字串
+            item["base_fare_usd"],
+            item["per_stop_rate_usd"],
+            item["frequency_min"],
+            item["operates_on"]
+        )
+        rows.append(row)
+        
+    inserted = insert_many(cur, table, columns, rows)
+    print(f"  - Seeded {inserted} rows into {table}")
+    
 
 
 def seed_national_rail_schedules(cur):
     data = load("national_rail_schedules.json")
-    # TODO: Design your table schema, then implement the INSERT logic here.
-    pass
+    
+    table = "national_rail_schedules"
+    columns = [
+        "schedule_id",
+        "line",
+        "service_type",
+        "direction",
+        "origin_station_id",
+        "destination_station_id",
+        "stops_in_order",
+        "passed_through_stations",
+        "first_train_time",
+        "last_train_time",
+        "travel_time_from_origin_min",
+        "fare_classes",
+        "frequency_min",
+        "operates_on"
+    ]
+    
+    rows = []
+    for item in data:
+        row = (
+            item["schedule_id"],
+            item["line"],
+            item["service_type"],
+            item["direction"],
+            item["origin_station_id"],
+            item["destination_station_id"],
+            item["stops_in_order"],
+            item.get("passed_through_stations"),  # 普通車沒有這欄位，若無則返回 None (SQL NULL)
+            item["first_train_time"],
+            item["last_train_time"],
+            json.dumps(item["travel_time_from_origin_min"]),
+            json.dumps(item["fare_classes"]),
+            item["frequency_min"],
+            item["operates_on"]
+        )
+        rows.append(row)
+        
+    inserted = insert_many(cur, table, columns, rows)
+    print(f"  - Seeded {inserted} rows into {table}")
 
 
 def seed_seat_layouts(cur):
     data = load("national_rail_seat_layouts.json")
-    # TODO: Design your table schema, then implement the INSERT logic here.
-    pass
+    
+    table = "national_rail_seat_layouts"
+    columns = ["layout_id", "schedule_id", "coaches"]
+    
+    rows = []
+    for item in data:
+        row = (
+            item["layout_id"],
+            item["schedule_id"],
+            json.dumps(item["coaches"]) # 將完整的巢狀結構轉為 JSON 字串
+        )
+        rows.append(row)
+        
+    inserted = insert_many(cur, table, columns, rows)
+    print(f"  - Seeded {inserted} rows into {table}")
 
 
-def seed_users(cur):
+def seed_registered_users(cur):
     data = load("registered_users.json")
-    # TODO: Design your table schema, then implement the INSERT logic here.
-    pass
+    
+    table = "registered_users"
+    columns = [
+        "user_id", "full_name", "email", "password", "phone",
+        "date_of_birth", "secret_question", "secret_answer",
+        "registered_at", "is_active"
+    ]
+    
+    rows = []
+    for item in data:
+        row = (
+            item["user_id"],
+            item["full_name"],
+            item["email"],
+            item["password"],
+            item["phone"],
+            item["date_of_birth"],
+            item["secret_question"],
+            item["secret_answer"],
+            item["registered_at"],
+            item["is_active"]
+        )
+        rows.append(row)
+        
+    inserted = insert_many(cur, table, columns, rows)
+    print(f"  - Seeded {inserted} rows into {table}")
 
 
 def seed_national_rail_bookings(cur):
     data = load("bookings.json")
-    # TODO: Design your table schema, then implement the INSERT logic here.
-    pass
+    
+    table = "bookings"
+    columns = [
+        "booking_id", "user_id", "schedule_id", "origin_station_id", 
+        "destination_station_id", "travel_date", "departure_time", 
+        "ticket_type", "fare_class", "coach", "seat_id", 
+        "stops_travelled", "amount_usd", "status", "booked_at", "travelled_at"
+    ]
+    
+    rows = []
+    for item in data:
+        row = (
+            item["booking_id"], item["user_id"], item["schedule_id"], 
+            item["origin_station_id"], item["destination_station_id"], 
+            item["travel_date"], item["departure_time"], item["ticket_type"], 
+            item["fare_class"], item["coach"], item["seat_id"], 
+            item["stops_travelled"], item["amount_usd"], item["status"], 
+            item["booked_at"], item["travelled_at"] # 自動處理 null
+        )
+        rows.append(row)
+        
+    inserted = insert_many(cur, table, columns, rows)
+    print(f"  - Seeded {inserted} rows into {table}")
 
 
-def seed_metro_travels(cur):
+def seed_metro_travel_history(cur):
     data = load("metro_travel_history.json")
-    # TODO: Design your table schema, then implement the INSERT logic here.
-    pass
+    
+    table = "metro_travel_history"
+    columns = [
+        "trip_id", "user_id", "schedule_id", "origin_station_id", 
+        "destination_station_id", "travel_date", "ticket_type", 
+        "day_pass_ref", "stops_travelled", "amount_usd", 
+        "status", "purchased_at", "travelled_at"
+    ]
+    
+    rows = []
+    for item in data:
+        row = (
+            item["trip_id"], item["user_id"], item["schedule_id"],
+            item["origin_station_id"], item["destination_station_id"],
+            item["travel_date"], item["ticket_type"], 
+            item.get("day_pass_ref"), item.get("stops_travelled"), 
+            item["amount_usd"], item["status"], 
+            item.get("purchased_at"), item.get("travelled_at")
+        )
+        rows.append(row)
+        
+    inserted = insert_many(cur, table, columns, rows)
+    print(f"  - Seeded {inserted} rows into {table}")
 
 
 def seed_payments(cur):
     data = load("payments.json")
-    # TODO: Design your table schema, then implement the INSERT logic here.
-    pass
+    
+    table = "payments"
+    columns = [
+        "payment_id", "booking_id", "amount_usd", 
+        "method", "status", "paid_at"
+    ]
+    
+    rows = []
+    for item in data:
+        row = (
+            item["payment_id"], item["booking_id"], item["amount_usd"],
+            item["method"], item["status"], item["paid_at"]
+        )
+        rows.append(row)
+        
+    inserted = insert_many(cur, table, columns, rows)
+    print(f"  - Seeded {inserted} rows into {table}")
+
 
 
 def seed_feedback(cur):
     data = load("feedback.json")
-    # TODO: Design your table schema, then implement the INSERT logic here.
-    pass
+    
+    table = "feedback"
+    columns = ["feedback_id", "booking_id", "user_id", "rating", "comment", "submitted_at"]
+    
+    rows = []
+    for item in data:
+        row = (
+            item["feedback_id"], 
+            item["booking_id"], 
+            item["user_id"], 
+            item["rating"], 
+            item["comment"], 
+            item["submitted_at"]
+        )
+        rows.append(row)
+        
+    inserted = insert_many(cur, table, columns, rows)
+    print(f"  - Seeded {inserted} rows into {table}")
+
+def seed_refund_policies(cur):
+    data = load("refund_policy.json")
+    
+    # 匯入政策主檔
+    for item in data:
+        if "compensation_rules" in item:
+            # 順便處理補償規則表
+            for rule in item["compensation_rules"]:
+                cur.execute("""
+                    INSERT INTO compensation_rules (rule_id, condition_desc, compensation, how_to_claim)
+                    VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING
+                """, (rule["rule_id"], rule["condition"], rule["compensation"], rule["how_to_claim"]))
+            continue # 跳過這筆延遲補償政策的其餘欄位
+
+        cur.execute("""
+            INSERT INTO refund_policies (policy_id, label, applies_to, cancellation_windows, notes, no_show_policy)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (
+            item["policy_id"], item["label"], json.dumps(item["applies_to"]), 
+            json.dumps(item["cancellation_windows"]), item.get("notes"), item.get("no_show_policy")
+        ))
+    print("  - Seeded refund_policies and compensation_rules tables.")
 
 
+def seed_ticket_types(cur):
+    data = load("ticket_types.json")
+    
+    table = "ticket_types"
+    columns = ["ticket_type", "display_name", "available_on", "description", "config"]
+    
+    rows = []
+    for item in data:
+        # 將該票種的配置整合成一個 JSON 物件
+        config_data = {
+            "metro": item.get("metro"),
+            "national_rail": item.get("national_rail")
+        }
+        
+        row = (
+            item["ticket_type"],
+            item["display_name"],
+            item["available_on"],
+            item["description"],
+            json.dumps(config_data)
+        )
+        rows.append(row)
+        
+    inserted = insert_many(cur, table, columns, rows)
+    print(f"  - Seeded {inserted} rows into {table}")
+
+
+    def seed_booking_rules(cur):
+    data = load("booking_rules.json") # 注意：若這是一個單一的大物件，你需要調整載入方式
+    
+    table = "booking_rules"
+    
+    # 準備三筆核心設定
+    rules = [
+        ("national_rail", data.get("national_rail")),
+        ("metro", data.get("metro")),
+        ("general", data.get("general_rules"))
+    ]
+    
+    for key, config in rules:
+        cur.execute(f"""
+            INSERT INTO {table} (rule_key, config) 
+            VALUES (%s, %s) ON CONFLICT (rule_key) DO UPDATE SET config = EXCLUDED.config
+        """, (key, json.dumps(config)))
+        
+    print(f"  - Seeded booking rules into {table}")
+
+
+    
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -148,3 +458,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
