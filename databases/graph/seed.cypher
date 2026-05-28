@@ -28,8 +28,11 @@ FOR (n:NationalRailStation) ON (n.name);
 
 // 3. 關聯屬性索引 (Relationship Property Indexes) (可選，適用於 Neo4j 4.3+)
 // 針對連接路線建立索引，加快針對特定「路線 (line)」的路徑搜尋
-CREATE INDEX connected_to_line_index IF NOT EXISTS 
-FOR ()-[r:CONNECTED_TO]-() ON (r.line);
+CREATE INDEX metro_link_line_index IF NOT EXISTS 
+FOR ()-[r:METRO_LINK]-() ON (r.line);
+
+CREATE INDEX rail_link_line_index IF NOT EXISTS 
+FOR ()-[r:RAIL_LINK]-() ON (r.line);
 
 // 備註：此 Cypher 腳本可透過 Neo4j Browser 執行，或由後端程式在啟動時自動套用。
 // 依據專案規範，車站 ID 如 "MS01" 統一為 VARCHAR(10) (在關聯式資料庫中)，
