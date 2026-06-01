@@ -50,24 +50,20 @@ def seed():
         # 1. 建立地鐵站點 (Metro Stations)
         session.run("""
         UNWIND $metro_stations AS m
-        CREATE (n:Station:MetroStation {
-            station_id: m.station_id,
-            name: m.name,
-            lines: m.lines,
-            is_interchange_national_rail: m.is_interchange_national_rail
-        })
+        MERGE (n:Station:MetroStation {station_id: m.station_id})
+        SET n.name = m.name,
+            n.lines = m.lines,
+            n.is_interchange_national_rail = m.is_interchange_national_rail
         """, metro_stations=metro_stations)
         print("  Created Metro Station nodes")
 
         # 2. 建立火車站點 (National Rail Stations)
         session.run("""
         UNWIND $rail_stations AS r
-        CREATE (n:Station:NationalRailStation {
-            station_id: r.station_id,
-            name: r.name,
-            lines: r.lines,
-            is_interchange_metro: r.is_interchange_metro
-        })
+        MERGE (n:Station:NationalRailStation {station_id: r.station_id})
+        SET n.name = r.name,
+            n.lines = r.lines,
+            n.is_interchange_metro = r.is_interchange_metro
         """, rail_stations=rail_stations)
         print("  Created National Rail Station nodes")
 
@@ -78,8 +74,7 @@ def seed():
         UNWIND m.adjacent_stations AS adj
         MATCH (dest:MetroStation {station_id: adj.station_id})
         MERGE (src)-[rel:METRO_LINK {line: adj.line}]->(dest)
-        ON CREATE SET 
-            rel.travel_time_min = adj.travel_time_min,
+        SET rel.travel_time_min = adj.travel_time_min,
             rel.fare = 0.30
         """, metro_stations=metro_stations)
         print("  Created Metro relationships")
@@ -91,8 +86,7 @@ def seed():
         UNWIND r.adjacent_stations AS adj
         MATCH (dest:NationalRailStation {station_id: adj.station_id})
         MERGE (src)-[rel:RAIL_LINK {line: adj.line}]->(dest)
-        ON CREATE SET 
-            rel.travel_time_min = adj.travel_time_min,
+        SET rel.travel_time_min = adj.travel_time_min,
             rel.fare_standard = 1.50,
             rel.fare_first = 2.50
         """, rail_stations=rail_stations)
@@ -106,9 +100,9 @@ def seed():
         MATCH (ms:MetroStation {station_id: m.station_id})
         MATCH (rs:NationalRailStation {station_id: m.interchange_national_rail_station_id})
         MERGE (ms)-[rel1:INTERCHANGE_TO {type: 'walking'}]->(rs)
-        ON CREATE SET rel1.travel_time_min = 5
+        SET rel1.travel_time_min = 5
         MERGE (rs)-[rel2:INTERCHANGE_TO {type: 'walking'}]->(ms)
-        ON CREATE SET rel2.travel_time_min = 5
+        SET rel2.travel_time_min = 5
         """, metro_stations=metro_stations)
         print("  Created Interchange relationships (Walking transfers)")
 

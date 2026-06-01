@@ -322,7 +322,7 @@ def query_alternative_routes(
     })
     YIELD path
     
-    # 將找到的每條 path 解構成多個關係 (relationships) 的列表
+    // 將找到的每條 path 解構成多個關係 (relationships) 的列表
     RETURN [r IN relationships(path) | {
         from_id: startNode(r).station_id,
         to_id: endNode(r).station_id,
@@ -386,12 +386,12 @@ def query_interchange_path(origin_id: str, destination_id: str) -> dict:
     CALL apoc.algo.dijkstra(start, end, 'METRO_LINK|RAIL_LINK|INTERCHANGE_TO', 'travel_time_min') 
     YIELD path, weight
     
-    # 找出路徑中所有屬於轉乘邊的起迄點站 ID
+    // 找出路徑中所有屬於轉乘邊的起迄點站 ID
     WITH path, weight,
          [r IN relationships(path) WHERE type(r) = 'INTERCHANGE_TO' | startNode(r).station_id] +
          [r IN relationships(path) WHERE type(r) = 'INTERCHANGE_TO' | endNode(r).station_id] AS interchange_list
          
-    # 使用 apoc.coll.toSet 將收集到的轉乘站 ID 進行去重複處理
+    // 使用 apoc.coll.toSet 將收集到的轉乘站 ID 進行去重複處理
     RETURN 
         weight AS total_time,
         [n IN nodes(path) | n.station_id] AS station_ids,
@@ -436,9 +436,27 @@ def query_delay_ripple(delayed_station_id: str, hops: int = 2) -> list[dict]:
     Returns:
         List of dicts: {station_id, name, hops_away, lines_affected}
     """
-    # 防禦性程式碼：如果輸入的步數小於 1，直接回傳空列表
-    if hops < 1:
+    if hops < 0:
         return []
+
+    # 處理邊界條件：hops=0 時，只回傳該故障車站本身
+    if hops == 0:
+        cypher_query = """
+        MATCH (s:Station {station_id: $delayed_station_id})
+        RETURN s.station_id AS station_id, s.name AS name
+        """
+        with _driver() as driver:
+            with driver.session() as session:
+                result = session.run(cypher_query, delayed_station_id=delayed_station_id)
+                record = result.single()
+                if record:
+                    return [{
+                        "station_id": record["station_id"],
+                        "name": record["name"],
+                        "hops_away": 0,
+                        "lines_affected": []
+                    }]
+                return []
 
     # 1. 撰寫 Cypher 查詢語句
     # 步驟 A: 補上 :Station 標籤以觸發 Unique Constraint 索引
@@ -448,15 +466,15 @@ def query_delay_ripple(delayed_station_id: str, hops: int = 2) -> list[dict]:
     cypher_query = f"""
     MATCH path = (start:Station {{station_id: $delayed_station_id}})-[:METRO_LINK|RAIL_LINK|INTERCHANGE_TO*1..{hops}]->(affected:Station)
     
-    # 排除起點本身（雖然 *1.. 預設就不會包含 0 步，但這可作為防禦性過濾）
+    // 排除起點本身（雖然 *1.. 預設就不會包含 0 步，但這可作為防禦性過濾）
     WHERE affected.station_id <> $delayed_station_id
     
-    # 對每條路徑提取所有關係的線路名稱
+    // 對每條路徑提取所有關係的線路名稱
     WITH affected, 
          length(path) AS distance,
          [r IN relationships(path) | coalesce(r.line, "Interchange")] AS lines_in_path
          
-    # 按照受影響車站進行聚合，計算最小步數 (最短波及距離)，並將所有路徑的線路合併去重複
+    // 按照受影響車站進行聚合，計算最小步數 (最短波及距離)，並將所有路徑的線路合併去重複
     RETURN 
         affected.station_id AS station_id,
         affected.name AS name,
