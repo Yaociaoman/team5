@@ -113,34 +113,40 @@ def query_national_rail_availability(
         return default_response
 
 
-def query_national_rail_fare(schedule_id: str, fare_class: str, stops_travelled: int) -> Optional[dict]:
+
+def query_national_rail_fare(
+    schedule_id: str,
+    fare_class: str,
+    stops_travelled: int,
+) -> Optional[dict]:
     """
-    Calculate the national rail fare for a single-ticket journey.
+    Calculate the fare for a national rail journey using nested JSONB attributes safely.
     """
     sql_query = """
         SELECT 
-            fare_classes -> %s AS class_fare
+            (fare_classes -> %s ->>> 'base_fare_usd')::NUMERIC AS base_fare,
+            (fare_classes -> %s ->>> 'per_stop_rate_usd')::NUMERIC AS per_stop_rate
         FROM national_rail_schedules
         WHERE schedule_id = %s;
     """
 
+    query_params = (fare_class, fare_class, schedule_id)
+
     try:
         with _connect() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(sql_query, (fare_class, schedule_id))
+                cur.execute(sql_query, query_params)
                 record = cur.fetchone()
                 
-                if not record or not record.get("class_fare"):
+                if not record or record["base_fare"] is None:
                     return None
                 
-                class_fare = record["class_fare"]
-                # Psycopg2 automatically parses JSONB into a dictionary
-                base_fare = float(class_fare.get("base_fare_usd", 0))
-                per_stop_rate = float(class_fare.get("per_stop_rate_usd", 0))
-                
+                base_fare = float(record["base_fare"])
+                per_stop_rate = float(record["per_stop_rate"])
                 total_fare = base_fare + (per_stop_rate * stops_travelled)
                 
                 return {
+                    "fare_class": fare_class,
                     "base_fare_usd": base_fare,
                     "per_stop_rate_usd": per_stop_rate,
                     "total_fare_usd": round(total_fare, 2)
