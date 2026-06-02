@@ -15,6 +15,9 @@ import secrets
 
 import psycopg2
 from psycopg2.extras import execute_values
+from argon2 import PasswordHasher
+
+ph = PasswordHasher()
 
 # ── Resolve Paths ────────────────────────────────────────────────────────────
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -240,10 +243,13 @@ def seed_users(cur):
         
         # 2. Extract credentials and isolate to user_credentials boundary
         raw_password = item["password"]
-        salt = secrets.token_hex(16)
-        # Adaptive Multi-parameter Hashing Blueprint Simulation
-        password_hash = f"simulated_argon2id_${salt}${raw_password[:4]}..." 
-        cred_rows.append((item["user_id"], password_hash, salt))
+        
+        # Use real Argon2id hash for the seeded mock users so they can successfully log in
+        password_hash = ph.hash(raw_password)
+        # We store a dummy salt to fulfill the NOT NULL constraint, as Argon2id hashes contain their own salt
+        dummy_salt = "argon2_internal"
+        
+        cred_rows.append((item["user_id"], password_hash, dummy_salt))
         
     inserted_users = insert_many(cur, user_table, user_columns, user_rows)
     print(f"  - Seeded {inserted_users} rows into {user_table}")
