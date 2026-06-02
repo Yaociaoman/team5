@@ -113,7 +113,6 @@ def query_national_rail_availability(
         return default_response
 
 
-<<<<<<< HEAD
 def query_national_rail_fare(schedule_id: str, fare_class: str, stops_travelled: int) -> Optional[dict]:
     """
     Calculate the national rail fare for a single-ticket journey.
@@ -121,25 +120,10 @@ def query_national_rail_fare(schedule_id: str, fare_class: str, stops_travelled:
     sql_query = """
         SELECT 
             fare_classes -> %s AS class_fare
-=======
-def query_national_rail_fare(
-    schedule_id: str,
-    fare_class: str,
-    stops_travelled: int,
-) -> Optional[dict]:
-    """
-    Calculate the fare for a national rail journey using nested JSONB attributes safely.
-    """
-    sql_query = """
-        SELECT 
-            (fare_classes -> %s ->>> 'base_fare_usd')::NUMERIC AS base_fare,
-            (fare_classes -> %s ->>> 'per_stop_rate_usd')::NUMERIC AS per_stop_rate
->>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
         FROM national_rail_schedules
         WHERE schedule_id = %s;
     """
 
-<<<<<<< HEAD
     try:
         with _connect() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -157,25 +141,6 @@ def query_national_rail_fare(
                 total_fare = base_fare + (per_stop_rate * stops_travelled)
                 
                 return {
-=======
-    query_params = (fare_class, fare_class, schedule_id)
-
-    try:
-        with _connect() as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(sql_query, query_params)
-                record = cur.fetchone()
-                
-                if not record or record["base_fare"] is None:
-                    return None
-                
-                base_fare = float(record["base_fare"])
-                per_stop_rate = float(record["per_stop_rate"])
-                total_fare = base_fare + (per_stop_rate * stops_travelled)
-                
-                return {
-                    "fare_class": fare_class,
->>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
                     "base_fare_usd": base_fare,
                     "per_stop_rate_usd": per_stop_rate,
                     "total_fare_usd": round(total_fare, 2)
@@ -339,7 +304,6 @@ def query_user_profile(user_email: str) -> Optional[dict]:
     """
     # Security Refactor: Excluded password from selection query to comply with isolation architecture
     sql_query = """
-<<<<<<< HEAD
         SELECT 
             user_id,
             full_name,
@@ -350,9 +314,6 @@ def query_user_profile(user_email: str) -> Optional[dict]:
             secret_answer,
             registered_at,
             is_active
-=======
-        SELECT user_id, full_name, email, phone, date_of_birth, secret_question, secret_answer, registered_at, is_active
->>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
         FROM registered_users
         WHERE LOWER(email) = LOWER(%s);
     """
@@ -545,15 +506,11 @@ def execute_cancellation(
                 return False, "Booking record not found or already processed"
 
             departure_datetime = datetime.combine(booking["travel_date"], booking["departure_time"])
-<<<<<<< HEAD
             current_datetime = simulated_now if simulated_now else datetime.now() # Mock evaluation time metric tracking
             
             hours_until_departure = (departure_datetime - current_datetime).total_seconds() / 3600.0
 
             # Step 3: Match policy guidelines according to dynamic service_type signatures
-=======
-            hours_until_departure = (departure_datetime - datetime.now()).total_seconds() / 3600.0
->>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
             policy_id = "RF002" if booking["service_type"] == "Express" else "RF001"
             
             refund_percentage = 0.0
@@ -625,7 +582,6 @@ def register_user(
             new_user_id = f"RU{user_count + 1:02d}"
 
             full_name = f"{first_name} {surname}"
-<<<<<<< HEAD
             date_of_birth = f"{year_of_birth}-01-01" # Default to Jan 1st for year placeholders
             
             # Hash the user's password using Argon2id before storing it
@@ -642,16 +598,6 @@ def register_user(
                 new_user_id, full_name, email, 
                 date_of_birth, secret_question, secret_answer
             ))
-=======
-            date_of_birth = f"{year_of_birth}-01-01"
-
-            insert_user_sql = "INSERT INTO registered_users (user_id, full_name, email, date_of_birth, secret_question, secret_answer, is_active) VALUES (%s, %s, %s, %s, %s, %s, TRUE);"
-            cur.execute(insert_user_sql, (new_user_id, full_name, email, date_of_birth, secret_question, secret_answer))
-
-            password_hash = ph.hash(password)
-            insert_cred_sql = "INSERT INTO user_credentials (user_id, password_hash, salt) VALUES (%s, %s, 'argon2id_embedded');"
-            cur.execute(insert_cred_sql, (new_user_id, password_hash))
->>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
             
             # Insert the hashed password into the user_credentials boundary
             cred_sql = """
@@ -681,7 +627,6 @@ def login_user(email: str, password: str) -> Optional[dict]:
     ph = PasswordHasher()
 
     sql_query = """
-<<<<<<< HEAD
         SELECT 
             ru.user_id,
             ru.email,
@@ -697,15 +642,6 @@ def login_user(email: str, password: str) -> Optional[dict]:
         JOIN user_credentials uc ON ru.user_id = uc.user_id
         WHERE LOWER(ru.email) = LOWER(%s) 
           AND ru.is_active = TRUE;
-=======
-        SELECT u.user_id, u.email, u.full_name,
-               SPLIT_PART(u.full_name, ' ', 1) AS first_name,
-               SPLIT_PART(u.full_name, ' ', 2) AS surname,
-               u.phone, u.date_of_birth, u.is_active, c.password_hash
-        FROM registered_users u
-        JOIN user_credentials c ON u.user_id = c.user_id
-        WHERE LOWER(u.email) = LOWER(%s) AND u.is_active = TRUE;
->>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
     """
 
     try:
@@ -713,7 +649,6 @@ def login_user(email: str, password: str) -> Optional[dict]:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(sql_query, (email,))
                 record = cur.fetchone()
-<<<<<<< HEAD
                 
                 if record:
                     hashed_password = record.pop("hashed_password")
@@ -727,19 +662,6 @@ def login_user(email: str, password: str) -> Optional[dict]:
                         return None
                 
                 return None
-=======
-                if not record:
-                    return None
-                
-                try:
-                    ph.verify(record["password_hash"], password)
-                except VerifyMismatchError:
-                    return None
-                
-                user_profile = dict(record)
-                user_profile.pop("password_hash", None)
-                return user_profile
->>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
     except (Exception, psycopg2.DatabaseError) as error:
         print(f"Database error in login_user: {error}")
         return None
@@ -786,7 +708,6 @@ def update_password(email: str, new_password: str) -> bool:
     # Hash the new password before updating
     hashed_password = ph.hash(new_password)
 
-<<<<<<< HEAD
     sql_query = """
         UPDATE user_credentials 
         SET password_hash = %s 
@@ -799,14 +720,6 @@ def update_password(email: str, new_password: str) -> bool:
         with conn.cursor() as cur:
             cur.execute(sql_query, (hashed_password, email))
             # Check row count updates to confirm action mutation viability
-=======
-    sql_query = "UPDATE user_credentials SET password_hash = %s WHERE user_id = (SELECT user_id FROM registered_users WHERE LOWER(email) = LOWER(%s));"
-
-    try:
-        with conn.cursor() as cur:
-            new_hash = ph.hash(new_password)
-            cur.execute(sql_query, (new_hash, email))
->>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
             if cur.rowcount == 0:
                 conn.rollback()
                 return False
