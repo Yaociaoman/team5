@@ -19,8 +19,14 @@ from typing import Optional
 
 import psycopg2
 import psycopg2.extras
+from argon2 import PasswordHasher
+from argon2 import exceptions as argon2_exceptions
 
 from skeleton.config import PG_DSN, VECTOR_TOP_K, VECTOR_SIMILARITY_THRESHOLD
+
+# Initialize PasswordHasher once
+ph = PasswordHasher()
+
 
 
 def _connect():
@@ -107,6 +113,15 @@ def query_national_rail_availability(
         return default_response
 
 
+<<<<<<< HEAD
+def query_national_rail_fare(schedule_id: str, fare_class: str, stops_travelled: int) -> Optional[dict]:
+    """
+    Calculate the national rail fare for a single-ticket journey.
+    """
+    sql_query = """
+        SELECT 
+            fare_classes -> %s AS class_fare
+=======
 def query_national_rail_fare(
     schedule_id: str,
     fare_class: str,
@@ -119,10 +134,30 @@ def query_national_rail_fare(
         SELECT 
             (fare_classes -> %s ->>> 'base_fare_usd')::NUMERIC AS base_fare,
             (fare_classes -> %s ->>> 'per_stop_rate_usd')::NUMERIC AS per_stop_rate
+>>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
         FROM national_rail_schedules
         WHERE schedule_id = %s;
     """
 
+<<<<<<< HEAD
+    try:
+        with _connect() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(sql_query, (fare_class, schedule_id))
+                record = cur.fetchone()
+                
+                if not record or not record.get("class_fare"):
+                    return None
+                
+                class_fare = record["class_fare"]
+                # Psycopg2 automatically parses JSONB into a dictionary
+                base_fare = float(class_fare.get("base_fare_usd", 0))
+                per_stop_rate = float(class_fare.get("per_stop_rate_usd", 0))
+                
+                total_fare = base_fare + (per_stop_rate * stops_travelled)
+                
+                return {
+=======
     query_params = (fare_class, fare_class, schedule_id)
 
     try:
@@ -140,6 +175,7 @@ def query_national_rail_fare(
                 
                 return {
                     "fare_class": fare_class,
+>>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
                     "base_fare_usd": base_fare,
                     "per_stop_rate_usd": per_stop_rate,
                     "total_fare_usd": round(total_fare, 2)
@@ -240,14 +276,14 @@ def query_available_seats(
         SELECT 
             seat.seat_id,
             seat.coach,
-            (seat.row)::INT AS row,
-            (seat.column)::INT AS column
+            seat.row AS row,
+            seat.column AS column
         FROM national_rail_seat_layouts nrsl,
         JSONB_TO_RECORDSET(nrsl.coaches -> %s) AS seat(
             seat_id VARCHAR, 
             coach VARCHAR, 
-            row INT, 
-            column INT
+            row VARCHAR, 
+            column VARCHAR
         )
         WHERE nrsl.schedule_id = %s
           AND seat.seat_id NOT IN (
@@ -303,7 +339,20 @@ def query_user_profile(user_email: str) -> Optional[dict]:
     """
     # Security Refactor: Excluded password from selection query to comply with isolation architecture
     sql_query = """
+<<<<<<< HEAD
+        SELECT 
+            user_id,
+            full_name,
+            email,
+            phone,
+            date_of_birth,
+            secret_question,
+            secret_answer,
+            registered_at,
+            is_active
+=======
         SELECT user_id, full_name, email, phone, date_of_birth, secret_question, secret_answer, registered_at, is_active
+>>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
         FROM registered_users
         WHERE LOWER(email) = LOWER(%s);
     """
@@ -471,7 +520,11 @@ def execute_booking(
         conn.close()
 
 
-def execute_cancellation(booking_id: str, user_id: str) -> tuple[bool, dict | str]:
+def execute_cancellation(
+    booking_id: str, 
+    user_id: str, 
+    simulated_now: Optional[datetime] = None
+) -> tuple[bool, dict | str]:
     """
     Cancel an active rail booking, computing refunds based on business logic timeline metrics.
     """
@@ -492,7 +545,15 @@ def execute_cancellation(booking_id: str, user_id: str) -> tuple[bool, dict | st
                 return False, "Booking record not found or already processed"
 
             departure_datetime = datetime.combine(booking["travel_date"], booking["departure_time"])
+<<<<<<< HEAD
+            current_datetime = simulated_now if simulated_now else datetime.now() # Mock evaluation time metric tracking
+            
+            hours_until_departure = (departure_datetime - current_datetime).total_seconds() / 3600.0
+
+            # Step 3: Match policy guidelines according to dynamic service_type signatures
+=======
             hours_until_departure = (departure_datetime - datetime.now()).total_seconds() / 3600.0
+>>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
             policy_id = "RF002" if booking["service_type"] == "Express" else "RF001"
             
             refund_percentage = 0.0
@@ -564,6 +625,24 @@ def register_user(
             new_user_id = f"RU{user_count + 1:02d}"
 
             full_name = f"{first_name} {surname}"
+<<<<<<< HEAD
+            date_of_birth = f"{year_of_birth}-01-01" # Default to Jan 1st for year placeholders
+            
+            # Hash the user's password using Argon2id before storing it
+            hashed_password = ph.hash(password)
+
+            # SQL query to insert the user profile data records
+            insert_sql = """
+                INSERT INTO registered_users (
+                    user_id, full_name, email, date_of_birth, 
+                    secret_question, secret_answer, is_active
+                ) VALUES (%s, %s, %s, %s, %s, %s, TRUE);
+            """
+            cur.execute(insert_sql, (
+                new_user_id, full_name, email, 
+                date_of_birth, secret_question, secret_answer
+            ))
+=======
             date_of_birth = f"{year_of_birth}-01-01"
 
             insert_user_sql = "INSERT INTO registered_users (user_id, full_name, email, date_of_birth, secret_question, secret_answer, is_active) VALUES (%s, %s, %s, %s, %s, %s, TRUE);"
@@ -572,6 +651,16 @@ def register_user(
             password_hash = ph.hash(password)
             insert_cred_sql = "INSERT INTO user_credentials (user_id, password_hash, salt) VALUES (%s, %s, 'argon2id_embedded');"
             cur.execute(insert_cred_sql, (new_user_id, password_hash))
+>>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
+            
+            # Insert the hashed password into the user_credentials boundary
+            cred_sql = """
+                INSERT INTO user_credentials (user_id, password_hash, salt) 
+                VALUES (%s, %s, %s);
+            """
+            # Argon2id handles its own salt in the hash string, but we fulfill the schema's NOT NULL constraint
+            dummy_salt = "argon2_internal"
+            cur.execute(cred_sql, (new_user_id, hashed_password, dummy_salt))
             
             conn.commit()
             return True, new_user_id
@@ -592,6 +681,23 @@ def login_user(email: str, password: str) -> Optional[dict]:
     ph = PasswordHasher()
 
     sql_query = """
+<<<<<<< HEAD
+        SELECT 
+            ru.user_id,
+            ru.email,
+            ru.full_name,
+            -- Split names dynamically on output to comply with downstream consumer mapping contracts
+            SPLIT_PART(ru.full_name, ' ', 1) AS first_name,
+            SPLIT_PART(ru.full_name, ' ', 2) AS surname,
+            ru.phone,
+            ru.date_of_birth,
+            ru.is_active,
+            uc.password_hash AS hashed_password
+        FROM registered_users ru
+        JOIN user_credentials uc ON ru.user_id = uc.user_id
+        WHERE LOWER(ru.email) = LOWER(%s) 
+          AND ru.is_active = TRUE;
+=======
         SELECT u.user_id, u.email, u.full_name,
                SPLIT_PART(u.full_name, ' ', 1) AS first_name,
                SPLIT_PART(u.full_name, ' ', 2) AS surname,
@@ -599,6 +705,7 @@ def login_user(email: str, password: str) -> Optional[dict]:
         FROM registered_users u
         JOIN user_credentials c ON u.user_id = c.user_id
         WHERE LOWER(u.email) = LOWER(%s) AND u.is_active = TRUE;
+>>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
     """
 
     try:
@@ -606,6 +713,21 @@ def login_user(email: str, password: str) -> Optional[dict]:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(sql_query, (email,))
                 record = cur.fetchone()
+<<<<<<< HEAD
+                
+                if record:
+                    hashed_password = record.pop("hashed_password")
+                    try:
+                        # Verify the password using Argon2id
+                        ph.verify(hashed_password, password)
+                        return dict(record)
+                    except argon2_exceptions.VerifyMismatchError:
+                        return None
+                    except argon2_exceptions.InvalidHashError:
+                        return None
+                
+                return None
+=======
                 if not record:
                     return None
                 
@@ -617,6 +739,7 @@ def login_user(email: str, password: str) -> Optional[dict]:
                 user_profile = dict(record)
                 user_profile.pop("password_hash", None)
                 return user_profile
+>>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
     except (Exception, psycopg2.DatabaseError) as error:
         print(f"Database error in login_user: {error}")
         return None
@@ -659,13 +782,31 @@ def update_password(email: str, new_password: str) -> bool:
 
     conn = psycopg2.connect(PG_DSN)
     conn.autocommit = False
+    
+    # Hash the new password before updating
+    hashed_password = ph.hash(new_password)
 
+<<<<<<< HEAD
+    sql_query = """
+        UPDATE user_credentials 
+        SET password_hash = %s 
+        WHERE user_id = (
+            SELECT user_id FROM registered_users WHERE LOWER(email) = LOWER(%s)
+        );
+    """
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql_query, (hashed_password, email))
+            # Check row count updates to confirm action mutation viability
+=======
     sql_query = "UPDATE user_credentials SET password_hash = %s WHERE user_id = (SELECT user_id FROM registered_users WHERE LOWER(email) = LOWER(%s));"
 
     try:
         with conn.cursor() as cur:
             new_hash = ph.hash(new_password)
             cur.execute(sql_query, (new_hash, email))
+>>>>>>> 184807c30afaf1d77962efe064f5362a88d08a23
             if cur.rowcount == 0:
                 conn.rollback()
                 return False
