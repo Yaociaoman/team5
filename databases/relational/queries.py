@@ -146,7 +146,6 @@ def query_national_rail_fare(
                 total_fare = base_fare + (per_stop_rate * stops_travelled)
                 
                 return {
-                    "fare_class": fare_class,
                     "base_fare_usd": base_fare,
                     "per_stop_rate_usd": per_stop_rate,
                     "total_fare_usd": round(total_fare, 2)
@@ -372,8 +371,8 @@ def query_user_bookings(user_email: str) -> dict:
                 metro_trips = cur.fetchall()
 
                 return {
-                    "national_rail": [dict(row) for row in rail_bookings],
-                    "metro": [dict(row) for row in metro_trips]
+                    "national_rail": [dict(row) for row in rail_bookings] if rail_bookings else [],
+                    "metro": [dict(row) for row in metro_trips] if metro_trips else []
                 }
     except (Exception, psycopg2.DatabaseError) as error:
         print(f"Database error in query_user_bookings: {error}")
@@ -610,9 +609,8 @@ def register_user(
                 INSERT INTO user_credentials (user_id, password_hash, salt) 
                 VALUES (%s, %s, %s);
             """
-            # Argon2id handles its own salt in the hash string, but we fulfill the schema's NOT NULL constraint
-            dummy_salt = "argon2_internal"
-            cur.execute(cred_sql, (new_user_id, hashed_password, dummy_salt))
+            # Argon2id handles its own salt in the hash string, leaving the database salt field empty
+            cur.execute(cred_sql, (new_user_id, hashed_password, ""))
             
             conn.commit()
             return True, new_user_id

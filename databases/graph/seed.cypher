@@ -56,18 +56,18 @@ MERGE (n2:Station:NationalRailStation {station_id: 'NRS02'})
 
 // Create Sample Metro Link
 MERGE (m1)-[rm:METRO_LINK {line: 'Red Line'}]->(m2)
-  ON CREATE SET rm.distance = 1.2, rm.duration_minutes = 3
+  ON CREATE SET rm.distance = 1.2, rm.travel_time_min = 3, rm.fare = 0.30, rm.fare_standard = 0.30, rm.fare_first = 0.30
 MERGE (m2)-[rm_rev:METRO_LINK {line: 'Red Line'}]->(m1)
-  ON CREATE SET rm_rev.distance = 1.2, rm_rev.duration_minutes = 3
+  ON CREATE SET rm_rev.distance = 1.2, rm_rev.travel_time_min = 3, rm_rev.fare = 0.30, rm_rev.fare_standard = 0.30, rm_rev.fare_first = 0.30
 
 // Create Sample Rail Link
 MERGE (n1)-[rr:RAIL_LINK {line: 'West Coast Line'}]->(n2)
-  ON CREATE SET rr.distance = 7.5, rr.duration_minutes = 10
+  ON CREATE SET rr.distance = 7.5, rr.travel_time_min = 10, rr.fare_standard = 1.50, rr.fare_first = 2.50
 MERGE (n2)-[rr_rev:RAIL_LINK {line: 'West Coast Line'}]->(n1)
-  ON CREATE SET rr_rev.distance = 7.5, rr_rev.duration_minutes = 10
+  ON CREATE SET rr_rev.distance = 7.5, rr_rev.travel_time_min = 10, rr_rev.fare_standard = 1.50, rr_rev.fare_first = 2.50
 
 // Create Transfer Link between Metro and Rail at the same location
-MERGE (m1)-[t:TRANSFER]->(n1)
-  ON CREATE SET t.walking_time_minutes = 5
-MERGE (n1)-[t_rev:TRANSFER]->(m1)
-  ON CREATE SET t_rev.walking_time_minutes = 5
+MERGE (m1)-[t:INTERCHANGE_TO]->(n1)
+  ON CREATE SET t.travel_time_min = 5, t.fare = 0.0, t.fare_standard = 0.0, t.fare_first = 0.0
+MERGE (n1)-[t_rev:INTERCHANGE_TO]->(m1)
+  ON CREATE SET t_rev.travel_time_min = 5, t_rev.fare = 0.0, t_rev.fare_standard = 0.0, t_rev.fare_first = 0.0

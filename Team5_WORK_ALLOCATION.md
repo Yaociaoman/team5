@@ -24,8 +24,8 @@ or reassigned mid-project).
 | **Task 1** — Relational schema design (`schema.sql`) | 姚喬嫚 | 陳少畇 | |
 | **Task 2a** — Core availability & fare queries (`query_national_rail_availability`, `query_metro_schedules`, `query_national_rail_fare`, `query_metro_fare`) | 陳少畇 | | |
 | **Task 2b** — Seat & user queries (`query_available_seats`, `query_user_profile`, `query_user_bookings`, `query_payment_info`) | 陳少畇 | | |
-| **Task 2c** — Write operations (`execute_booking`, `execute_cancellation`) | | | |
-| **Task 2d** — Authentication queries (`login_user`, `register_user`, `get_user_secret_question`, `verify_secret_answer`, `update_password`) | | | |
+| **Task 2c** — Write operations (`execute_booking`, `execute_cancellation`) | 陳少畇 | | |
+| **Task 2d** — Authentication queries (`login_user`, `register_user`, `get_user_secret_question`, `verify_secret_answer`, `update_password`) | 陳佑瑄| | |
 | **Task 3** — PostgreSQL seeding (`seed_postgres.py`) | 姚喬嫚 | 陳少畇 | |
 | **Task 4** — Neo4j graph design & seeding (`seed_neo4j.py`, `seed.cypher`) | 陳佑瑄 | | |
 | **Task 5** — Neo4j query functions (`graph/queries.py`) | 陳少畇 | 陳佑瑄 | |

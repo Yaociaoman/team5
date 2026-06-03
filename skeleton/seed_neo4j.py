@@ -90,8 +90,10 @@ def seed():
         UNWIND m.adjacent_stations AS adj
         MATCH (dest:Station:MetroStation {station_id: adj.station_id})
         MERGE (src)-[rel:METRO_LINK {line: adj.line}]->(dest)
-        SET rel.duration_minutes = adj.travel_time_min,
-            rel.fare = 0.30
+        SET rel.travel_time_min = adj.travel_time_min,
+            rel.fare = 0.30,
+            rel.fare_standard = 0.30,
+            rel.fare_first = 0.30
         """, metro_stations=metro_stations)
         print("  Dynamically created Metro relationships")
 
@@ -102,23 +104,29 @@ def seed():
         UNWIND r.adjacent_stations AS adj
         MATCH (dest:Station:NationalRailStation {station_id: adj.station_id})
         MERGE (src)-[rel:RAIL_LINK {line: adj.line}]->(dest)
-        SET rel.duration_minutes = adj.travel_time_min,
+        SET rel.travel_time_min = adj.travel_time_min,
             rel.fare_standard = 1.50,
             rel.fare_first = 2.50
         """, rail_stations=rail_stations)
         print("  Dynamically created National Rail relationships")
 
         # 5. 動態建立跨系統步行轉乘連線 (Transfer Links between Metro and Rail)
-        # 嚴格使用 TRANSFER 與 walking_time_minutes 以對應 seed.cypher 裡的拓撲定義
+        # 嚴格使用 INTERCHANGE_TO 與 travel_time_min 以對應演算法設定
         session.run("""
         UNWIND $metro_stations AS m
         WITH m WHERE m.is_interchange_national_rail = true AND m.interchange_national_rail_station_id IS NOT NULL
         MATCH (ms:Station:MetroStation {station_id: m.station_id})
         MATCH (rs:Station:NationalRailStation {station_id: m.interchange_national_rail_station_id})
-        MERGE (ms)-[rel1:TRANSFER]->(rs)
-        SET rel1.walking_time_minutes = 5
-        MERGE (rs)-[rel2:TRANSFER]->(ms)
-        SET rel2.walking_time_minutes = 5
+        MERGE (ms)-[rel1:INTERCHANGE_TO]->(rs)
+        SET rel1.travel_time_min = 5,
+            rel1.fare = 0.0,
+            rel1.fare_standard = 0.0,
+            rel1.fare_first = 0.0
+        MERGE (rs)-[rel2:INTERCHANGE_TO]->(ms)
+        SET rel2.travel_time_min = 5,
+            rel2.fare = 0.0,
+            rel2.fare_standard = 0.0,
+            rel2.fare_first = 0.0
         """, metro_stations=metro_stations)
         print("  Dynamically created Transfer relationships (Walking transfers)")
 
