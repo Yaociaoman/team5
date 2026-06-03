@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS metro_schedules (
     direction VARCHAR(20) NOT NULL,
     origin_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
     destination_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
+    stops_in_order VARCHAR(50)[] NOT NULL,
     first_train_time TIME NOT NULL,
     last_train_time TIME NOT NULL,
     travel_time_from_origin_min JSONB NOT NULL,
@@ -126,10 +127,12 @@ CREATE TABLE IF NOT EXISTS metro_schedule_stops (
 -- 4. National Rail Schedules
 CREATE TABLE IF NOT EXISTS national_rail_schedules (
     schedule_id VARCHAR(50) PRIMARY KEY,
+    line VARCHAR(20) NOT NULL,
     service_type VARCHAR(20) NOT NULL,
     direction VARCHAR(20) NOT NULL,
     origin_station_id VARCHAR(50) NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
     destination_station_id VARCHAR(50) NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
+    stops_in_order VARCHAR(50)[] NOT NULL,
     first_train_time TIME NOT NULL,
     last_train_time TIME NOT NULL,
     travel_time_from_origin_min JSONB NOT NULL,

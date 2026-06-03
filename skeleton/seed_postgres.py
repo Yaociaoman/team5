@@ -2,16 +2,16 @@
 Seed PostgreSQL with all TransitFlow mock data from train-mock-data/.
 
 Usage:
-    python skeleton/seed_postgres.py
+    python3 skeleton/seed_postgres.py
 
 Run AFTER docker-compose up -d.
-You must first design and create your tables in databases/relational/schema.sql.
 Safe to re-run: implement your inserts with ON CONFLICT DO NOTHING.
 """
 
 import json
 import os
 import sys
+import secrets
 
 import psycopg2
 from psycopg2.extras import execute_values
@@ -19,7 +19,9 @@ from argon2 import PasswordHasher
 
 ph = PasswordHasher()  # Argon2id — 用於 seed_users 的密碼雜湊
 
-# ── resolve paths ────────────────────────────────────────────────────────────
+ph = PasswordHasher()
+
+# ── Resolve Paths ────────────────────────────────────────────────────────────
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 DATA_DIR    = os.path.join(PROJECT_DIR, "train-mock-data")
@@ -55,7 +57,7 @@ def insert_many(cur, table, columns, rows):
     return cur.rowcount
 
 
-# ── seeders ──────────────────────────────────────────────────────────────────
+# ── Seeders ──────────────────────────────────────────────────────────────────
 
 def seed_metro_stations(cur):
     data = load("metro_stations.json")
