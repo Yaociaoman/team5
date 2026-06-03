@@ -28,6 +28,49 @@
 --    docker-compose down -v && docker-compose up -d
 -- ============================================================
 
+-- ============================================================
+--  TransitFlow PostgreSQL Schema
+--  Fully restructured to respect cascading relational dependencies.
+-- ============================================================
+
+-- ── LAYER 1: BASE CONFIGURATION TABLES (完全獨立的主檔，先建) ──────────────────
+
+-- 13. Ticket Types Setup
+CREATE TABLE IF NOT EXISTS ticket_types (
+    ticket_type VARCHAR(20) PRIMARY KEY,
+    display_name VARCHAR(100) NOT NULL,
+    available_on VARCHAR(20)[] NOT NULL,
+    description TEXT,
+    config JSONB NOT NULL
+);
+
+-- 14. Booking Rules Setup
+CREATE TABLE IF NOT EXISTS booking_rules (
+    rule_key VARCHAR(50) PRIMARY KEY,
+    config JSONB NOT NULL
+);
+
+-- 8. Refund Policies Master
+CREATE TABLE IF NOT EXISTS refund_policies (
+    policy_id VARCHAR(50) PRIMARY KEY,
+    label VARCHAR(255) NOT NULL,
+    applies_to JSONB NOT NULL,
+    cancellation_windows JSONB NOT NULL,
+    notes TEXT,
+    no_show_policy TEXT
+);
+
+-- 9. Compensation Rules Master
+CREATE TABLE IF NOT EXISTS compensation_rules (
+    rule_id VARCHAR(50) PRIMARY KEY,
+    condition_desc TEXT NOT NULL,
+    compensation TEXT NOT NULL,
+    how_to_claim TEXT NOT NULL
+);
+
+
+-- ── LAYER 2: STATION VERTICES (車站主檔) ──────────────────────────────────────
+
 -- 1. Metro Stations Master
 CREATE TABLE IF NOT EXISTS metro_stations (
     station_id VARCHAR(50) PRIMARY KEY,
@@ -37,7 +80,7 @@ CREATE TABLE IF NOT EXISTS metro_stations (
     interchange_metro_lines VARCHAR(20)[],
     is_interchange_national_rail BOOLEAN DEFAULT FALSE,
     interchange_national_rail_station_id VARCHAR(50),
-    adjacent_stations JSONB NOT NULL -- 儲存相鄰車站與時間的陣列
+    adjacent_stations JSONB NOT NULL
 );
 
 -- 2. National Rail Stations Master
@@ -52,11 +95,8 @@ CREATE TABLE IF NOT EXISTS national_rail_stations (
     adjacent_stations JSONB
 );
 
--- Establish cross-network foreign key link missing from master layer
-ALTER TABLE metro_stations 
-    ADD CONSTRAINT fk_metro_to_national_rail 
-    FOREIGN KEY (interchange_national_rail_station_id) 
-    REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT;
+
+-- ── LAYER 3: TIMETABLES & SCHEDULES (車次時刻表主檔) ──────────────────────────
 
 -- 3. Metro Schedules
 CREATE TABLE IF NOT EXISTS metro_schedules (
@@ -107,6 +147,16 @@ CREATE TABLE IF NOT EXISTS rail_schedule_stops (
     CONSTRAINT uq_rail_stop_sequence UNIQUE (schedule_id, stop_order)
 );
 
+-- 11. 國鐵座位配置資料表
+CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
+    layout_id VARCHAR(50) PRIMARY KEY,
+    schedule_id VARCHAR(50) NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE CASCADE,
+    coaches JSONB NOT NULL
+);
+
+
+-- ── LAYER 4: USER DEMOGRAPHICS & AUTHENTICATION (使用者基本與身分認證) ──────────
+
 -- 5. Registered Users Profile
 CREATE TABLE IF NOT EXISTS registered_users (
     user_id VARCHAR(50) PRIMARY KEY,
@@ -126,16 +176,10 @@ CREATE TABLE IF NOT EXISTS user_credentials (
     password_hash VARCHAR(255) NOT NULL,
     salt VARCHAR(64) NOT NULL
 );
-COMMENT ON TABLE user_credentials IS 'Isolates highly sensitive authentication cryptograms from standard user demographic reads. The system uses Argon2id (adaptive multi-parameter hashing) for industry-standard cryptographic salting and defense against rainbow-table/brute-force vectors.';
+COMMENT ON TABLE user_credentials IS 'Isolates highly sensitive authentication cryptograms from standard user demographic reads.';
 
--- 13. Ticket Types Setup
-CREATE TABLE IF NOT EXISTS ticket_types (
-    ticket_type VARCHAR(20) PRIMARY KEY, -- such as 'single', 'return', 'day_pass'
-    display_name VARCHAR(100) NOT NULL,
-    available_on VARCHAR(20)[] NOT NULL,
-    description TEXT,
-    config JSONB NOT NULL -- store detailed pricing_model, rules, validity
-);
+
+-- ── LAYER 5: TRANSACTION LEDGERS (高度依賴前方主檔的流向與訂單紀錄) ─────────────
 
 -- 6. Bookings Financial Ledger
 CREATE TABLE IF NOT EXISTS bookings (
@@ -154,52 +198,35 @@ CREATE TABLE IF NOT EXISTS bookings (
     amount_usd NUMERIC(10, 2) NOT NULL,
     status VARCHAR(20) NOT NULL,
     booked_at TIMESTAMPTZ NOT NULL,
-    travelled_at TIMESTAMPTZ -- could be NULL(such as canceled order)
+    travelled_at TIMESTAMPTZ
 );
 
 -- 7. Payments Gateways Ledger
 CREATE TABLE IF NOT EXISTS payments (
-    payment_id VARCHAR(50) PRIMARY KEY,
-    booking_id VARCHAR(50) NOT NULL REFERENCES bookings(booking_id) ON DELETE CASCADE,
-    amount_usd NUMERIC(10, 2) NOT NULL,
-    method VARCHAR(20) NOT NULL,    -- credit_card, ewallet, debit_card
-    status VARCHAR(20) NOT NULL,    -- paid, refunded
-    paid_at TIMESTAMPTZ NOT NULL
-);
-
--- 8. Refund Policies Master
-CREATE TABLE IF NOT EXISTS refund_policies (
-    policy_id VARCHAR(50) PRIMARY KEY,
-    label VARCHAR(255) NOT NULL,
-    applies_to JSONB NOT NULL,            -- Stores filtering criteria such as network_type, service_type, etc.
-    cancellation_windows JSONB NOT NULL,  -- Stores the complete array of refund time-windows and dynamic penalty tiers.
-    notes TEXT,
-    no_show_policy TEXT
-);
-
--- 9. Compensation Rules Master
-CREATE TABLE IF NOT EXISTS compensation_rules (
-    rule_id VARCHAR(50) PRIMARY KEY,
-    condition_desc TEXT NOT NULL,
-    compensation TEXT NOT NULL,
-    how_to_claim TEXT NOT NULL
+    payment_id   VARCHAR(50)    PRIMARY KEY,
+    booking_id   VARCHAR(50)    REFERENCES bookings(booking_id) ON DELETE CASCADE,
+    trip_id      VARCHAR(50)    REFERENCES metro_travel_history(trip_id) ON DELETE CASCADE,
+    amount_usd   NUMERIC(10, 2) NOT NULL,
+    method       VARCHAR(20)    NOT NULL,
+    status       VARCHAR(20)    NOT NULL,
+    paid_at      TIMESTAMPTZ    NOT NULL,
+    CONSTRAINT chk_payments_single_source CHECK (
+        (booking_id IS NOT NULL)::int + (trip_id IS NOT NULL)::int = 1
+    )
 );
 
 -- 10. User Feedback Metrics
 CREATE TABLE IF NOT EXISTS feedback (
-    feedback_id VARCHAR(50) PRIMARY KEY,
-    booking_id VARCHAR(50) NOT NULL REFERENCES bookings(booking_id) ON DELETE CASCADE,
-    user_id VARCHAR(50) NOT NULL REFERENCES registered_users(user_id) ON DELETE CASCADE,
-    rating INT CHECK (rating >= 1 AND rating <= 5),
-    comment TEXT,                                   -- allow NULL
-    submitted_at TIMESTAMPTZ NOT NULL
-);
-
--- 11. 國鐵座位配置資料表
-CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
-    layout_id VARCHAR(50) PRIMARY KEY,
-    schedule_id VARCHAR(50) NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE CASCADE,
-    coaches JSONB NOT NULL -- Store complete information on carriage and seating configurations
+    feedback_id  VARCHAR(50)  PRIMARY KEY,
+    booking_id   VARCHAR(50)  REFERENCES bookings(booking_id) ON DELETE CASCADE,
+    trip_id      VARCHAR(50)  REFERENCES metro_travel_history(trip_id) ON DELETE CASCADE,
+    user_id      VARCHAR(50)  NOT NULL REFERENCES registered_users(user_id) ON DELETE CASCADE,
+    rating       INT          CHECK (rating >= 1 AND rating <= 5),
+    comment      TEXT,
+    submitted_at TIMESTAMPTZ  NOT NULL,
+    CONSTRAINT chk_feedback_single_source CHECK (
+        (booking_id IS NOT NULL)::int + (trip_id IS NOT NULL)::int = 1
+    )
 );
 
 -- 12. Metro High-Volume Travel Ledger
@@ -211,18 +238,12 @@ CREATE TABLE IF NOT EXISTS metro_travel_history (
     destination_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
     travel_date DATE NOT NULL,
     ticket_type VARCHAR(20) NOT NULL REFERENCES ticket_types(ticket_type) ON DELETE RESTRICT,
-    day_pass_ref VARCHAR(50), -- If it's a day ticket sub-trip, it refers to the Sunday ticket trip_id
+    day_pass_ref VARCHAR(50),
     stops_travelled INT,
     amount_usd NUMERIC(10, 2) NOT NULL,
     status VARCHAR(20) NOT NULL,
     purchased_at TIMESTAMPTZ,
     travelled_at TIMESTAMPTZ
-);
-
--- 14. Booking Rules Setup
-CREATE TABLE IF NOT EXISTS booking_rules (
-    rule_key VARCHAR(50) PRIMARY KEY, -- such as 'national_rail', 'metro', 'general'
-    config JSONB NOT NULL
 );
 
 -- ============================================================
@@ -245,5 +266,6 @@ CREATE TABLE IF NOT EXISTS policy_documents (
 );
 
 -- Index for fast cosine similarity search
-CREATE INDEX IF NOT EXISTS ON policy_documents USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_policy_documents_embedding ON policy_documents USING hnsw (embedding vector_cosine_ops);
+
 

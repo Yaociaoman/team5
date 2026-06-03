@@ -15,6 +15,9 @@ import sys
 
 import psycopg2
 from psycopg2.extras import execute_values
+from argon2 import PasswordHasher
+
+ph = PasswordHasher()  # Argon2id — 用於 seed_users 的密碼雜湊
 
 # ── resolve paths ────────────────────────────────────────────────────────────
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -107,13 +110,15 @@ def seed_national_rail_stations(cur):
 def seed_metro_schedules(cur):
     data = load("metro_schedules.json")
     table = "metro_schedules"
+    # stops_in_order 已從主表移除，改由 metro_schedule_stops junction table 儲存
     columns = [
         "schedule_id", "line", "direction", "origin_station_id",
-        "destination_station_id", "stops_in_order", "first_train_time",
+        "destination_station_id", "first_train_time",
         "last_train_time", "travel_time_from_origin_min", "base_fare_usd",
         "per_stop_rate_usd", "frequency_min", "operates_on"
     ]
     rows = []
+    stops_rows = []
     for item in data:
         row = (
             item["schedule_id"],
@@ -121,7 +126,6 @@ def seed_metro_schedules(cur):
             item["direction"],
             item["origin_station_id"],
             item["destination_station_id"],
-            item["stops_in_order"],
             item["first_train_time"],
             item["last_train_time"],
             json.dumps(item["travel_time_from_origin_min"]),
@@ -131,31 +135,40 @@ def seed_metro_schedules(cur):
             item["operates_on"]
         )
         rows.append(row)
+        # Table 3b — 停靠順序正規化寫入 metro_schedule_stops
+        for order_idx, station_id in enumerate(item["stops_in_order"]):
+            stops_rows.append((item["schedule_id"], station_id, order_idx + 1))
     inserted = insert_many(cur, table, columns, rows)
     print(f"  - Seeded {inserted} rows into {table}")
+    if stops_rows:
+        execute_values(
+            cur,
+            "INSERT INTO metro_schedule_stops (schedule_id, station_id, stop_order) VALUES %s ON CONFLICT DO NOTHING",
+            stops_rows
+        )
+        print(f"  - Seeded {len(stops_rows)} rows into metro_schedule_stops")
 
 
 def seed_national_rail_schedules(cur):
     data = load("national_rail_schedules.json")
     table = "national_rail_schedules"
+    # line / stops_in_order / passed_through_stations 不存在於 schema，已移除
+    # stops_in_order 改由 rail_schedule_stops junction table 儲存
     columns = [
-        "schedule_id", "line", "service_type", "direction",
-        "origin_station_id", "destination_station_id", "stops_in_order",
-        "passed_through_stations", "first_train_time", "last_train_time",
-        "travel_time_from_origin_min", "fare_classes", "frequency_min",
-        "operates_on"
+        "schedule_id", "service_type", "direction",
+        "origin_station_id", "destination_station_id", "first_train_time",
+        "last_train_time", "travel_time_from_origin_min", "fare_classes",
+        "frequency_min", "operates_on"
     ]
     rows = []
+    stops_rows = []
     for item in data:
         row = (
             item["schedule_id"],
-            item["line"],
             item["service_type"],
             item["direction"],
             item["origin_station_id"],
             item["destination_station_id"],
-            item["stops_in_order"],
-            item.get("passed_through_stations"),
             item["first_train_time"],
             item["last_train_time"],
             json.dumps(item["travel_time_from_origin_min"]),
@@ -164,8 +177,18 @@ def seed_national_rail_schedules(cur):
             item["operates_on"]
         )
         rows.append(row)
+        # Table 4b — 停靠順序正規化寫入 rail_schedule_stops
+        for order_idx, station_id in enumerate(item["stops_in_order"]):
+            stops_rows.append((item["schedule_id"], station_id, order_idx + 1))
     inserted = insert_many(cur, table, columns, rows)
     print(f"  - Seeded {inserted} rows into {table}")
+    if stops_rows:
+        execute_values(
+            cur,
+            "INSERT INTO rail_schedule_stops (schedule_id, station_id, stop_order) VALUES %s ON CONFLICT DO NOTHING",
+            stops_rows
+        )
+        print(f"  - Seeded {len(stops_rows)} rows into rail_schedule_stops")
 
 
 def seed_seat_layouts(cur):
@@ -186,29 +209,43 @@ def seed_seat_layouts(cur):
 
 def seed_users(cur):
     data = load("registered_users.json")
-    table = "registered_users"
-    columns = [
-        "user_id", "full_name", "email", "password", "phone",
+
+    # registered_users 主表不儲存密碼（schema 規定密碼隔離到 user_credentials）
+    user_columns = [
+        "user_id", "full_name", "email", "phone",
         "date_of_birth", "secret_question", "secret_answer",
         "registered_at", "is_active"
     ]
-    rows = []
+    user_rows = []
+    cred_rows = []
+
+    print("  - Hashing passwords with Argon2id (may take a moment)...")
     for item in data:
-        row = (
+        user_rows.append((
             item["user_id"],
             item["full_name"],
             item["email"],
-            item["password"],
             item["phone"],
             item["date_of_birth"],
             item["secret_question"],
             item["secret_answer"],
             item["registered_at"],
-            item["is_active"]
+            item["is_active"],
+        ))
+        # Argon2id 雜湊已內含 salt，dummy_salt 僅為滿足 NOT NULL 約束
+        password_hash = ph.hash(item["password"])
+        cred_rows.append((item["user_id"], password_hash, "argon2_internal"))
+
+    inserted = insert_many(cur, "registered_users", user_columns, user_rows)
+    print(f"  - Seeded {inserted} rows into registered_users")
+
+    if cred_rows:
+        execute_values(
+            cur,
+            "INSERT INTO user_credentials (user_id, password_hash, salt) VALUES %s ON CONFLICT DO NOTHING",
+            cred_rows
         )
-        rows.append(row)
-    inserted = insert_many(cur, table, columns, rows)
-    print(f"  - Seeded {inserted} rows into {table}")
+        print(f"  - Seeded {len(cred_rows)} rows into user_credentials")
 
 
 def seed_national_rail_bookings(cur):
@@ -263,40 +300,80 @@ def seed_payments(cur):
     data = load("payments.json")
     table = "payments"
     columns = [
-        "payment_id", "booking_id", "amount_usd", 
+        "payment_id", "booking_id", "trip_id", "amount_usd",
         "method", "status", "paid_at"
     ]
     rows = []
     for item in data:
+        raw_id = item["booking_id"]
+        # MT 開頭是地鐵 trip，BK 開頭是國鐵 booking
+        if raw_id.startswith("MT"):
+            booking_id, trip_id = None, raw_id
+        else:
+            booking_id, trip_id = raw_id, None
+
         row = (
-            item["payment_id"], item["booking_id"], item["amount_usd"],
-            item["method"], item["status"], item["paid_at"]
+            item["payment_id"], booking_id, trip_id,
+            item["amount_usd"], item["method"],
+            item["status"], item["paid_at"]
         )
         rows.append(row)
     inserted = insert_many(cur, table, columns, rows)
     print(f"  - Seeded {inserted} rows into {table}")
 
-
 def seed_feedback(cur):
     data = load("feedback.json")
     table = "feedback"
-    columns = ["feedback_id", "booking_id", "user_id", "rating", "comment", "submitted_at"]
+    columns = ["feedback_id", "booking_id", "trip_id", "user_id", "rating", "comment", "submitted_at"]
     rows = []
     for item in data:
+        raw_id = item["booking_id"]
+        if raw_id.startswith("MT"):
+            booking_id, trip_id = None, raw_id
+        else:
+            booking_id, trip_id = raw_id, None
         row = (
-            item["feedback_id"], 
-            item["booking_id"], 
-            item["user_id"], 
-            item["rating"], 
-            item["comment"], 
+            item["feedback_id"],
+            booking_id,
+            trip_id,
+            item["user_id"],
+            item["rating"],
+            item["comment"],
             item["submitted_at"]
         )
         rows.append(row)
     inserted = insert_many(cur, table, columns, rows)
     print(f"  - Seeded {inserted} rows into {table}")
     
-    # Safely bundle auxiliary policy data inside the final function to avoid breaking main() structure
+def main():
+    print("Connecting to PostgreSQL...")
+    conn = connect()
+    # 關閉自動提交，改用手動嚴格 Transaction 控制
+    conn.autocommit = False
+    cur = conn.cursor()
+
     try:
+        # 🔥 核心修正：告訴 PostgreSQL 這次 Transaction 內的所有外鍵約束「全部推遲檢查（DEFERRABLE）」
+        # 這樣一來，在 commit 之前，資料庫不會因為互相參照的 NR01/MS01 還沒建好而噴錯崩潰！
+        print("Enforcing transaction-level deferred constraints to bypass mutual master references...")
+        cur.execute("SET CONSTRAINTS ALL DEFERRED;")
+
+        print("Seeding Relational Infrastructure (Master Layer)...")
+        seed_metro_stations(cur)
+        seed_national_rail_stations(cur)
+        
+        # ⚠️ ticket_types 必須在 bookings / metro_travel_history 之前完成（FK 依賴）
+        # 不包 try/except：失敗直接 rollback，禁止靜默繼續
+        print("Seeding Configurations & Core Business Policies...")
+        types = load("ticket_types.json")
+        for t in types:
+            cfg_obj = json.dumps({"metro": t.get("metro"), "national_rail": t.get("national_rail")})
+            cur.execute("""
+                INSERT INTO ticket_types (ticket_type, display_name, available_on, description, config)
+                VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING
+            """, (t["ticket_type"], t["display_name"], t["available_on"], t["description"], cfg_obj))
+        print("  - Seeded ticket_types")
+
         policies = load("refund_policy.json")
         for p in policies:
             if "compensation_rules" in p:
@@ -310,51 +387,35 @@ def seed_feedback(cur):
                 INSERT INTO refund_policies (policy_id, label, applies_to, cancellation_windows, notes, no_show_policy)
                 VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING
             """, (p["policy_id"], p["label"], json.dumps(p["applies_to"]), json.dumps(p["cancellation_windows"]), p.get("notes"), p.get("no_show_policy")))
-        
-        types = load("ticket_types.json")
-        for t in types:
-            cfg_obj = json.dumps({"metro": t.get("metro"), "national_rail": t.get("national_rail")})
-            cur.execute("""
-                INSERT INTO ticket_types (ticket_type, display_name, available_on, description, config)
-                VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING
-            """, (t["ticket_type"], t["display_name"], t["available_on"], t["description"], cfg_obj))
-            
+        print("  - Seeded refund_policies and compensation_rules")
+
         rules = load("booking_rules.json")
         for k, c in [("national_rail", rules.get("national_rail")), ("metro", rules.get("metro")), ("general", rules.get("general_rules"))]:
             cur.execute("""
                 INSERT INTO booking_rules (rule_key, config) VALUES (%s, %s)
                 ON CONFLICT (rule_key) DO UPDATE SET config = EXCLUDED.config
             """, (k, json.dumps(c)))
-        print("  - Seeded refund_policies, ticket_types, and booking_rules.")
-    except Exception:
-        pass
+        print("  - Seeded booking_rules")
 
-
-# ── main ─────────────────────────────────────────────────────────────────────
-
-def main():
-    print("Connecting to PostgreSQL...")
-    conn = connect()
-    conn.autocommit = False
-    cur = conn.cursor()
-
-    try:
-        print("Seeding tables (dependency order):")
-        seed_metro_stations(cur)
-        seed_national_rail_stations(cur)
+        print("Seeding Timetables & Inventory...")
         seed_metro_schedules(cur)
         seed_national_rail_schedules(cur)
         seed_seat_layouts(cur)
+        
+        print("Seeding Users & Transaction Ledgers...")
         seed_users(cur)
         seed_national_rail_bookings(cur)
         seed_metro_travels(cur)
         seed_payments(cur)
         seed_feedback(cur)
+        
+        # 4. 手動提交 Transaction，此時資料已全部就位，外鍵完整通過驗證！
         conn.commit()
-        print("\nAll done. Database seeded successfully.")
+        print("\n🎉 All done! Database seeded successfully into 3NF schema.")
+        
     except Exception as e:
         conn.rollback()
-        print(f"\nError: {e}")
+        print(f"\n❌ Seeding process terminated due to error: {e}")
         raise
     finally:
         cur.close()
