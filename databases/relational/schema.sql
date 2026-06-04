@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS national_rail_stations (
     adjacent_stations JSONB
 );
 
--- 解決 metro_stations 與 national_rail_stations 之間的循環外鍵依賴
+-- Resolve circular foreign key dependencies between metro_stations and national_rail_stations
 ALTER TABLE metro_stations
     DROP CONSTRAINT IF EXISTS fk_metro_interchange_nr,
     ADD CONSTRAINT fk_metro_interchange_nr
@@ -129,8 +129,7 @@ ALTER TABLE metro_stations
     ON DELETE RESTRICT DEFERRABLE INITIALLY IMMEDIATE;
 
 
--- ── LAYER 3: TIMETABLES & SCHEDULES (車次時刻表主檔) ──────────────────────────
-
+-- ── LAYER 3: TIMETABLES & SCHEDULES (Train Timetable Master Data) ──────────────────
 -- 3. Metro Schedules
 CREATE TABLE IF NOT EXISTS metro_schedules (
     schedule_id VARCHAR(50) PRIMARY KEY,
@@ -183,7 +182,7 @@ CREATE TABLE IF NOT EXISTS rail_schedule_stops (
     CONSTRAINT uq_rail_stop_sequence UNIQUE (schedule_id, stop_order)
 );
 
--- 11. 國鐵座位配置資料表
+-- 11. National Railway Seat Configuration Table
 CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
     layout_id VARCHAR(50) PRIMARY KEY,
     schedule_id VARCHAR(50) NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE CASCADE,
@@ -191,7 +190,7 @@ CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
 );
 
 
--- ── LAYER 4: USER DEMOGRAPHICS & AUTHENTICATION (使用者基本與身分認證) ──────────
+-- ── LAYER 4: USER DEMOGRAPHICS & AUTHENTICATION (User Profiles & Identity Verification) ──
 
 -- 5. Registered Users Profile
 CREATE TABLE IF NOT EXISTS registered_users (
@@ -215,7 +214,7 @@ CREATE TABLE IF NOT EXISTS user_credentials (
 COMMENT ON TABLE user_credentials IS 'Isolates highly sensitive authentication cryptograms from standard user demographic reads.';
 
 
--- ── LAYER 5: TRANSACTION LEDGERS (高度依賴前方主檔的流向與訂單紀錄) ─────────────
+-- ── LAYER 5: TRANSACTION LEDGERS (Highly Dependent on Forward Master Data) ─────────────
 
 -- 6. Bookings Financial Ledger
 CREATE TABLE IF NOT EXISTS bookings (
