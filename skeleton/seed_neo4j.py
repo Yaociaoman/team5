@@ -34,27 +34,12 @@ def seed():
     metro_stations = _load("metro_stations.json")
     rail_stations  = _load("national_rail_stations.json")
 
-    cypher_file = os.path.normpath(
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "databases", "graph", "seed.cypher")
-    )
 
     driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
     with driver.session() as session:
 
         session.run("MATCH (n) DETACH DELETE n")
         print("  Cleared existing graph data")
-
-        # 0. Execute seed.cypher to apply constraints, indexes, and static topologies
-        if os.path.exists(cypher_file):
-            with open(cypher_file, 'r', encoding='utf-8') as f:
-                cypher_content = f.read()
-            # Split by semicolon to run statements individually
-            queries = [q.strip() for q in cypher_content.split(';') if q.strip()]
-            for q in queries:
-                session.run(q)
-            print("  Executed databases/graph/seed.cypher")
-        else:
-            print("  Warning: databases/graph/seed.cypher not found.")
 
         # --------------------------------------------------------------------------------
         # Project-Specific Constraints & Rules
@@ -69,20 +54,20 @@ def seed():
         # 1. Dynamically create Metro Station nodes
         session.run("""
         UNWIND $metro_stations AS m
-        MERGE (n:Station:MetroStation {station_id: m.station_id})
+        MERGE (n:MetroStation {station_id: m.station_id})
         SET n.name = m.name,
             n.lines = m.lines,
-            n.is_interchange_national_rail = m.is_interchange_national_rail
+            n.zone  = m.zone
         """, metro_stations=metro_stations)
-        print("  Dynamically created Metro Station nodes")
+        print(f"  Created {len(metro_stations)} MetroStation nodes")
 
         # 2. Dynamically create National Rail Station nodes
         session.run("""
         UNWIND $rail_stations AS r
-        MERGE (n:Station:NationalRailStation {station_id: r.station_id})
+        MERGE (n:RailStation {station_id: r.station_id})
         SET n.name = r.name,
             n.lines = r.lines,
-            n.is_interchange_metro = r.is_interchange_metro
+            n.zone  = r.zone
         """, rail_stations=rail_stations)
         print("  Dynamically created National Rail Station nodes")
 

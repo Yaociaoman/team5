@@ -156,7 +156,7 @@ CREATE TABLE IF NOT EXISTS rail_schedule_stops (
     CONSTRAINT uq_rail_stop_sequence UNIQUE (schedule_id, stop_order)
 );
 
--- 11. 國鐵座位配置資料表
+-- 11. National Railway Seat Configuration Table
 CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
     layout_id VARCHAR(50) PRIMARY KEY,
     schedule_id VARCHAR(50) NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE CASCADE,
@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
 );
 
 
--- ── LAYER 4: USER DEMOGRAPHICS & AUTHENTICATION (User Demographics & Authentication) ──────────
+-- ── LAYER 4: USER DEMOGRAPHICS & AUTHENTICATION (User Profiles & Identity Verification) ──
 
 -- 5. Registered Users Profile
 CREATE TABLE IF NOT EXISTS registered_users (
