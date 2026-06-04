@@ -112,6 +112,7 @@ def seed():
 
         # 5. 動態建立跨系統步行轉乘連線 (Transfer Links between Metro and Rail)
         # 嚴格使用 INTERCHANGE_TO 與 travel_time_min 以對應演算法設定
+        # 從 Metro 出發的轉乘設定
         session.run("""
         UNWIND $metro_stations AS m
         WITH m WHERE m.is_interchange_national_rail = true AND m.interchange_national_rail_station_id IS NOT NULL
@@ -128,6 +129,24 @@ def seed():
             rel2.fare_standard = 0.0,
             rel2.fare_first = 0.0
         """, metro_stations=metro_stations)
+
+        # 從 Rail 出發的轉乘設定（確保雙向對應無遺漏）
+        session.run("""
+        UNWIND $rail_stations AS r
+        WITH r WHERE r.is_interchange_metro = true AND r.interchange_metro_station_id IS NOT NULL
+        MATCH (rs:Station:NationalRailStation {station_id: r.station_id})
+        MATCH (ms:Station:MetroStation {station_id: r.interchange_metro_station_id})
+        MERGE (rs)-[rel1:INTERCHANGE_TO]->(ms)
+        SET rel1.travel_time_min = 5,
+            rel1.fare = 0.0,
+            rel1.fare_standard = 0.0,
+            rel1.fare_first = 0.0
+        MERGE (ms)-[rel2:INTERCHANGE_TO]->(rs)
+        SET rel2.travel_time_min = 5,
+            rel2.fare = 0.0,
+            rel2.fare_standard = 0.0,
+            rel2.fare_first = 0.0
+        """, rail_stations=rail_stations)
         print("  Dynamically created Transfer relationships (Walking transfers)")
 
     driver.close()
