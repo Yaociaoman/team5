@@ -73,13 +73,15 @@ Most correct = 5–7 · Some missing or wrong = 2–4 · No cardinality shown = 
 
 ## Section 4 — Vector / RAG Design · /15
 
-**Embedded**
+**Core Embedding Strategy and Cosine Similarity**
+TransitFlow utilizes cosine similarity rather than Euclidean distance to match user queries with policy documents. Cosine similarity measures the directional angle between two vectors in a high-dimensional space, yielding a score between -1 and 1. Because it focuses entirely on direction, it is completely magnitude-independent. This property is critical for semantic search across documents of unequal lengths. For instance, a short FAQ query and a detailed multi-paragraph policy regarding "refund eligibility" will point in the same semantic direction because they share the same underlying meaning. While the longer document contains more tokens and generates a larger vector magnitude, cosine similarity divides out this magnitude, ensuring that document length does not skew the retrieval results.
 
-| Criterion | What earns full marks |
-|-----------|-----------------------|
-| Explains what is embedded (policy documents) and why cosine similarity is appropriate for semantic search | Explains that cosine similarity is magnitude-independent and measures directional similarity in the embedding space — not just "it measures how similar two things are" |
-| Describes the full RAG pipeline: query embedding → similarity search → retrieved documents → LLM prompt → answer | All four stages described in sequence with enough detail that a reader could implement each stage |
-| Discusses the embedding dimension choice (768 for Ollama / 3072 for Gemini) and what happens if the provider is switched after seeding | States the actual dimension your implementation uses; explains that switching provider after seeding causes a dimension mismatch that makes the index unusable |
+**The Full RAG Pipeline**
+The RAG pipeline operates in a sequential four-stage process to resolve user questions. First, the query string is converted into a 768-dimensional vector via llm.embed() using the local nomic-embed-text model. Second, this vector is passed to PostgreSQL, where pgvector's <=> operator executes a cosine distance search. The system filters results with a similarity threshold of 0.5 and caps the output at the top 3 matches (LIMIT 3). Third, the retrieved policy documents are flattened into an indented, plain-text format containing the title, category, and up to 800 characters of content. Fourth, these normalized documents are wrapped in a strict prompt structure—labeled as the sole source of truth—and sent along with the user's question to the answering LLM.
+
+**Embedding Dimension Constraints and Provider Switching**
+The database schema is strictly tied to the embedding model's dimensions. By default, the system stores policy embeddings as 768-dimensional vectors produced by Ollama. The policy_documents table defines its vector column as vector(768) with an HNSW index configured for that exact width. If a developer switches the provider to Gemini, the new model (gemini-embedding-001) outputs 3072-dimensional vectors. No error occurs during the switch or seeding, but the system breaks catastrophically at query time. When a 3072-dimensional query vector is compared against the stored 768-dimensional vectors, PostgreSQL throws a dimension mismatch error, rendering the index unusable. To switch providers correctly, the developer must drop the table, recreate it as vector(3072), rebuild the HNSW index, and re-run the seeding script.
+
 | **Section 4 Total** | |
 
 > **Tip:** Explain the practical consequence of changing providers after seeding.
