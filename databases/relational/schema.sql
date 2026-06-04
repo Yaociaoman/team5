@@ -120,13 +120,6 @@ CREATE TABLE IF NOT EXISTS national_rail_stations (
     adjacent_stations JSONB
 );
 
--- 解決 metro_stations 與 national_rail_stations 之間的循環外鍵依賴
-ALTER TABLE metro_stations
-    DROP CONSTRAINT IF EXISTS fk_metro_interchange_nr,
-    ADD CONSTRAINT fk_metro_interchange_nr
-    FOREIGN KEY (interchange_national_rail_station_id)
-    REFERENCES national_rail_stations(station_id)
-    ON DELETE RESTRICT DEFERRABLE INITIALLY IMMEDIATE;
 
 
 -- ── LAYER 3: TIMETABLES & SCHEDULES (車次時刻表主檔) ──────────────────────────
