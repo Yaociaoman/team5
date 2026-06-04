@@ -50,8 +50,8 @@ def seed():
         # Condition 6: Timetable & Stop Design - The stop association table is implemented in the RDB, 
         #              while the physical adjacency relationship is expressed using CONNECTED_TO edges in Neo4j.
         # --------------------------------------------------------------------------------
-        
-        # 1. Dynamically Create Metro Stations
+       
+        # 1. Dynamically create Metro Station nodes
         session.run("""
         UNWIND $metro_stations AS m
         MERGE (n:MetroStation {station_id: m.station_id})
@@ -61,7 +61,7 @@ def seed():
         """, metro_stations=metro_stations)
         print(f"  Created {len(metro_stations)} MetroStation nodes")
 
-        # 2. 動態建立火車站點 (National Rail Stations)
+        # 2. Dynamically create National Rail Station nodes
         session.run("""
         UNWIND $rail_stations AS r
         MERGE (n:RailStation {station_id: r.station_id})
@@ -69,66 +69,75 @@ def seed():
             n.lines = r.lines,
             n.zone  = r.zone
         """, rail_stations=rail_stations)
-        print(f"  Created {len(rail_stations)} RailStation nodes")
-        
-        # 3. Dynamically Create Metro Adjacent Station Links (Metro Links)
-        for s in metro_stations:
-            for adj in s.get("adjacent_stations", []):
-                session.run(
-                    "MATCH (a:MetroStation {station_id: $from_id}) "
-                    "MATCH (b:MetroStation {station_id: $to_id}) "
-                    "MERGE (a)-[r:METRO_LINK {line: $line}]->(b) "
-                    "SET r.travel_time_min = $time, r.fare_usd = $fare",
-                    from_id=s["station_id"],
-                    to_id=adj["station_id"],
-                    line=adj.get("line", ""),
-                    time=adj.get("travel_time_min", 0),
-                    fare=adj.get("fare_usd", 0.0),
-                )
-        print(f"  Created METRO_LINK relationships")
+        print("  Dynamically created National Rail Station nodes")
 
-        # 4. Dynamically Create National Rail Adjacent Station Links (National Rail Links)
-        for s in rail_stations:
-            for adj in s.get("adjacent_stations", []):
-                session.run(
-                    "MATCH (a:RailStation {station_id: $from_id}) "
-                    "MATCH (b:RailStation {station_id: $to_id}) "
-                    "MERGE (a)-[r:RAIL_LINK {line: $line}]->(b) "
-                    "SET r.travel_time_min = $time, r.fare_usd = $fare",
-                    from_id=s["station_id"],
-                    to_id=adj["station_id"],
-                    line=adj.get("line", ""),
-                    time=adj.get("travel_time_min", 0),
-                    fare=adj.get("fare_usd", 0.0),
-                )
-        print(f"  Created RAIL_LINK relationships")
+        # 3. Dynamically Create Metro Links (Adjacent Station Connections)
+        session.run("""
+        UNWIND $metro_stations AS m
+        MATCH (src:Station:MetroStation {station_id: m.station_id})
+        UNWIND m.adjacent_stations AS adj
+        MATCH (dest:Station:MetroStation {station_id: adj.station_id})
+        MERGE (src)-[rel:METRO_LINK {line: adj.line}]->(dest)
+        SET rel.travel_time_min = adj.travel_time_min,
+            rel.fare = 0.30,
+            rel.fare_standard = 0.30,
+            rel.fare_first = 0.30
+        """, metro_stations=metro_stations)
+        print("  Dynamically created Metro relationships")
 
-        # 5. Dynamically Create Cross-System Walking Transfer Links (Transfer Links between Metro and Rail)
-        # Create bidirectional INTERCHANGE relationships between metro and rail stations
-        # walk_time_min represents the average walking time between platforms
-        interchange_count = 0
-        for s in metro_stations:
-            if s.get("is_interchange_national_rail") and s.get("interchange_national_rail_station_id"):
-                metro_id = s["station_id"]
-                rail_id  = s["interchange_national_rail_station_id"]
-                # Metro → Rail
-                session.run(
-                    "MATCH (m:MetroStation {station_id: $metro_id}) "
-                    "MATCH (r:RailStation  {station_id: $rail_id}) "
-                    "MERGE (m)-[i:INTERCHANGE {walk_time_min: 5}]->(r)",
-                    metro_id=metro_id, rail_id=rail_id,
-                )
-                # Rail → Metro (reverse direction)
-                session.run(
-                    "MATCH (m:MetroStation {station_id: $metro_id}) "
-                    "MATCH (r:RailStation  {station_id: $rail_id}) "
-                    "MERGE (r)-[i:INTERCHANGE {walk_time_min: 5}]->(m)",
-                    metro_id=metro_id, rail_id=rail_id,
-                )
-                interchange_count += 2
-        print(f"  Created {interchange_count} INTERCHANGE relationships")
+        # 4. Dynamically Create National Rail Links (Adjacent Station Connections)
+        session.run("""
+        UNWIND $rail_stations AS r
+        MATCH (src:Station:NationalRailStation {station_id: r.station_id})
+        UNWIND r.adjacent_stations AS adj
+        MATCH (dest:Station:NationalRailStation {station_id: adj.station_id})
+        MERGE (src)-[rel:RAIL_LINK {line: adj.line}]->(dest)
+        SET rel.travel_time_min = adj.travel_time_min,
+            rel.fare_standard = 1.50,
+            rel.fare_first = 2.50
+        """, rail_stations=rail_stations)
+        print("  Dynamically created National Rail relationships")
 
-        # 從 Rail 出發的轉乘設定（確保雙向對應無遺漏）
+        # 5. Dynamically Create Transfer Links between Metro and Rail
+        # Strictly use INTERCHANGE_TO with travel_time_min to correspond to the algorithmic settings
+        # Transfer settings from Metro
+        session.run("""
+        UNWIND $metro_stations AS m
+        WITH m WHERE m.is_interchange_national_rail = true AND m.interchange_national_rail_station_id IS NOT NULL
+        MATCH (ms:Station:MetroStation {station_id: m.station_id})
+        MATCH (rs:Station:NationalRailStation {station_id: m.interchange_national_rail_station_id})
+        MERGE (ms)-[rel1:INTERCHANGE_TO]->(rs)
+        SET rel1.travel_time_min = 5,
+            rel1.fare = 0.0,
+            rel1.fare_standard = 0.0,
+            rel1.fare_first = 0.0
+        MERGE (rs)-[rel2:INTERCHANGE_TO]->(ms)
+        SET rel2.travel_time_min = 5,
+            rel2.fare = 0.0,
+            rel2.fare_standard = 0.0,
+            rel2.fare_first = 0.0
+        """, metro_stations=metro_stations)
+
+        # Transfer settings from National Rail (ensure bidirectional correspondence)
+        session.run("""
+        UNWIND $rail_stations AS r
+        WITH r WHERE r.is_interchange_metro = true AND r.interchange_metro_station_id IS NOT NULL
+        MATCH (rs:Station:NationalRailStation {station_id: r.station_id})
+        MATCH (ms:Station:MetroStation {station_id: r.interchange_metro_station_id})
+        MERGE (rs)-[rel1:INTERCHANGE_TO]->(ms)
+        SET rel1.travel_time_min = 5,
+            rel1.fare = 0.0,
+            rel1.fare_standard = 0.0,
+            rel1.fare_first = 0.0
+        MERGE (ms)-[rel2:INTERCHANGE_TO]->(rs)
+        SET rel2.travel_time_min = 5,
+            rel2.fare = 0.0,
+            rel2.fare_standard = 0.0,
+            rel2.fare_first = 0.0
+        """, rail_stations=rail_stations)
+        print("  Dynamically created Transfer relationships (Walking transfers)")
+
+        # Transfer settings from National Rail (ensure bidirectional correspondence)
         session.run("""
         UNWIND $rail_stations AS r
         WITH r WHERE r.is_interchange_metro = true AND r.interchange_metro_station_id IS NOT NULL
