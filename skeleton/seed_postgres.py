@@ -112,24 +112,21 @@ def seed_national_rail_stations(cur):
 def seed_metro_schedules(cur):
     data = load("metro_schedules.json")
     table = "metro_schedules"
-    # stops_in_order 已從主表移除，改由 metro_schedule_stops junction table 儲存
     columns = [
         "schedule_id", "line", "direction", "origin_station_id",
-        "destination_station_id", "stops_in_order", "first_train_time",
-        "last_train_time", "travel_time_from_origin_min", "base_fare_usd",
+        "destination_station_id", "first_train_time", "last_train_time",
+        "travel_time_from_origin_min", "base_fare_usd",
         "per_stop_rate_usd", "frequency_min", "operates_on"
     ]
-    # 加了"stops_in_order",
     rows = []
     stops_rows = []
     for item in data:
-        row = (
+        rows.append((
             item["schedule_id"],
             item["line"],
             item["direction"],
             item["origin_station_id"],
             item["destination_station_id"],
-            item["stops_in_order"],
             item["first_train_time"],
             item["last_train_time"],
             json.dumps(item["travel_time_from_origin_min"]),
@@ -137,11 +134,8 @@ def seed_metro_schedules(cur):
             item["per_stop_rate_usd"],
             item["frequency_min"],
             item["operates_on"]
-        )
-        # 加了item["stops_in_order"],
-        rows.append(row)
-        # Table 3b — 停靠順序正規化寫入 metro_schedule_stops
-        for order_idx, station_id in enumerate(item["stops_in_order"]):
+        ))
+        for order_idx, station_id in enumerate(item.get("stops_in_order", [])):
             stops_rows.append((item["schedule_id"], station_id, order_idx + 1))
     inserted = insert_many(cur, table, columns, rows)
     print(f"  - Seeded {inserted} rows into {table}")
@@ -157,37 +151,30 @@ def seed_metro_schedules(cur):
 def seed_national_rail_schedules(cur):
     data = load("national_rail_schedules.json")
     table = "national_rail_schedules"
-    # line / stops_in_order / passed_through_stations 不存在於 schema，已移除
-    # stops_in_order 改由 rail_schedule_stops junction table 儲存
     columns = [
-        "schedule_id", "line", "service_type", "direction",
-        "origin_station_id", "destination_station_id","stops_in_order", "first_train_time",
-        "last_train_time", "travel_time_from_origin_min", "fare_classes",
+        "schedule_id", "service_type", "direction",
+        "origin_station_id", "destination_station_id",
+        "first_train_time", "last_train_time",
+        "travel_time_from_origin_min", "fare_classes",
         "frequency_min", "operates_on"
     ]
-    # 加了"stops_in_order",
     rows = []
     stops_rows = []
     for item in data:
-        row = (
+        rows.append((
             item["schedule_id"],
-            item["line"],
             item["service_type"],
             item["direction"],
             item["origin_station_id"],
             item["destination_station_id"],
-            item["stops_in_order"],
             item["first_train_time"],
             item["last_train_time"],
             json.dumps(item["travel_time_from_origin_min"]),
             json.dumps(item["fare_classes"]),
             item["frequency_min"],
             item["operates_on"]
-        )
-        # 加了item["line"],
-        rows.append(row)
-        # Table 4b — 停靠順序正規化寫入 rail_schedule_stops
-        for order_idx, station_id in enumerate(item["stops_in_order"]):
+        ))
+        for order_idx, station_id in enumerate(item.get("stops_in_order", [])):
             stops_rows.append((item["schedule_id"], station_id, order_idx + 1))
     inserted = insert_many(cur, table, columns, rows)
     print(f"  - Seeded {inserted} rows into {table}")
@@ -198,7 +185,6 @@ def seed_national_rail_schedules(cur):
             stops_rows
         )
         print(f"  - Seeded {len(stops_rows)} rows into rail_schedule_stops")
-
 
 def seed_seat_layouts(cur):
     data = load("national_rail_seat_layouts.json")
