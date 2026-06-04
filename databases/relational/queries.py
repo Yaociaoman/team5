@@ -60,6 +60,8 @@ def query_national_rail_availability(
     origin_id: str,
     destination_id: str,
     travel_date: Optional[str] = None,
+    type: Optional[str] = None,
+    **kwargs
 ) -> list[dict]:
     """
     Return national rail schedules that serve both origin and destination stations
@@ -69,7 +71,8 @@ def query_national_rail_availability(
 
     # 3NF Normalization Refactor: Querying via rail_schedule_stops instead of obsolete arrays.
     # We JOIN the bridge table twice (once for origin, once for destination) and guarantee direction via stop_order.
-    sql_query = """
+    type_filter = " AND nrs.service_type = %s" if type else ""
+    sql_query = f"""
         SELECT 
             nrs.schedule_id,
             nrs.line,
@@ -93,14 +96,17 @@ def query_national_rail_availability(
         FROM national_rail_schedules nrs
         JOIN rail_schedule_stops s1 ON nrs.schedule_id = s1.schedule_id AND s1.station_id = %s
         JOIN rail_schedule_stops s2 ON nrs.schedule_id = s2.schedule_id AND s2.station_id = %s
-        WHERE s1.stop_order < s2.stop_order;
+        WHERE s1.stop_order < s2.stop_order{type_filter};
     """
 
-    query_params = (
+    query_params = [
         travel_date if travel_date else "1970-01-01",
         origin_id,
         destination_id
-    )
+    ]
+    if type:
+        query_params.append(type)
+    query_params = tuple(query_params)
 
     try:
         with _connect() as conn:
