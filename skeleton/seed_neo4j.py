@@ -130,6 +130,25 @@ def seed():
         """, metro_stations=metro_stations)
         print("  Dynamically created Transfer relationships (Walking transfers)")
 
+        # 從 Rail 出發的轉乘設定（確保雙向對應無遺漏）
+        session.run("""
+        UNWIND $rail_stations AS r
+        WITH r WHERE r.is_interchange_metro = true AND r.interchange_metro_station_id IS NOT NULL
+        MATCH (rs:Station:NationalRailStation {station_id: r.station_id})
+        MATCH (ms:Station:MetroStation {station_id: r.interchange_metro_station_id})
+        MERGE (rs)-[rel1:INTERCHANGE_TO]->(ms)
+        SET rel1.travel_time_min = 5,
+            rel1.fare = 0.0,
+            rel1.fare_standard = 0.0,
+            rel1.fare_first = 0.0
+        MERGE (ms)-[rel2:INTERCHANGE_TO]->(rs)
+        SET rel2.travel_time_min = 5,
+            rel2.fare = 0.0,
+            rel2.fare_standard = 0.0,
+            rel2.fare_first = 0.0
+        """, rail_stations=rail_stations)
+        print("  Dynamically created Transfer relationships (Walking transfers)")
+
     driver.close()
     print("\nNeo4j graph seeded successfully.")
     print("   Open http://localhost:7475 to explore the graph.")

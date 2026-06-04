@@ -510,8 +510,14 @@ def execute_cancellation(
                 conn.rollback()
                 return False, "Booking record not found or already processed"
 
-            departure_datetime = datetime.combine(booking["travel_date"], booking["departure_time"])
-            current_datetime = simulated_now if simulated_now else datetime.now() # Mock evaluation time metric tracking
+            departure_datetime = datetime.combine(
+                booking["travel_date"],
+                booking["departure_time"]
+            )
+            # Both datetimes are kept naive (no tzinfo) to allow direct comparison.
+            # departure_datetime is assembled from DATE + TIME columns which carry no timezone.
+            # current_datetime strips tzinfo after fetching UTC so the types are consistent.
+            current_datetime = simulated_now if simulated_now else datetime.now(timezone.utc).replace(tzinfo=None)  # Use naive UTC to match departure_datetime which is assembled from DATE + TIME without timezone
             
             hours_until_departure = (departure_datetime - current_datetime).total_seconds() / 3600.0
 
