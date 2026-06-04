@@ -56,36 +56,37 @@ Most correct = 5–7 · Some missing or wrong = 2–4 · No cardinality shown = 
 ## Section 3 — Graph Database Design Rationale · /25
 
 1. 概念模型設計與實體映射理由在 TransitFlow 系統中，我們將城市地鐵（M1–M4）和國家鐵路（NR1–NR2）組成的雙層交通網絡，建模為一個異質圖（Heterogeneous Graph）。
-A. 節點設計 (Nodes):Station：基礎全域標籤，用於全域唯一性檢查與索引加速。:MetroStation 與 :RailStation：分別代表地鐵站與鐵路站。
-【設計理由】：車站是交通網絡的拓撲交匯點。將其建模為獨立「節點」而非邊上的屬性，是因為車站本身具備業務狀態（例如擁擠、延遲或封閉），節點化才能方便對其進行狀態變更。此外，分離標籤能讓 Cypher 查詢快速縮小搜尋範圍，避免全圖掃描。
 
-B. 關係設計 (Relationships)[:METRO_LINK] 與 [:RAIL_LINK]：代表地鐵與鐵路線路相鄰站點的物理連接。[:INTERCHANGE_TO]：代表跨網絡的同站步行轉乘通道。
-【設計理由】：將連接關係提升為一等公民（First-class citizen）。區分關係類型可讓演算法在純地鐵或純鐵路導航時，直接過濾掉無關的邊。而獨立出 INTERCHANGE_TO 關係，成功將「轉乘步行時間」解耦為獨立的邊權重，最短路徑演算法便能無縫計算轉乘成本，不需在節點內部寫複雜的條件跳躍邏輯。
+    A. 節點設計 (Nodes):Station：基礎全域標籤，用於全域唯一性檢查與索引加速。:MetroStation 與 :RailStation：分別代表地鐵站與鐵路站。
+        【設計理由】：車站是交通網絡的拓撲交匯點。將其建模為獨立「節點」而非邊上的屬性，是因為車站本身具備業務狀態（例如擁擠、延遲或封閉），節點化才能方便對其進行狀態變更。此外，分離標籤能讓 Cypher 查詢快速縮小搜尋範圍，避免全圖掃描。
 
-C. 屬性設計 (Properties)節點屬性：station_id (唯一碼)、name (站名)、lines (行經線路陣列，用於受災波及分析)、zone (計費區)。關係屬性：line (線路名)、travel_time_min (行車或轉乘時間)、fare_standard / fare_first (艙等票價)。
-【設計理由】：行車時間與票價是由「移動」產生的，成本屬於關係而非車站本身。車站節點存儲 lines 陣列，則能讓系統在某站故障時，立刻查出波及線路並向上層業務回報。
+    B. 關係設計 (Relationships)[:METRO_LINK] 與 [:RAIL_LINK]：代表地鐵與鐵路線路相鄰站點的物理連接。[:INTERCHANGE_TO]：代表跨網絡的同站步行轉乘通道。
+        【設計理由】：將連接關係提升為一等公民（First-class citizen）。區分關係類型可讓演算法在純地鐵或純鐵路導航時，直接過濾掉無關的邊。而獨立出 INTERCHANGE_TO 關係，成功將「轉乘步行時間」解耦為獨立的邊權重，最短路徑演算法便能無縫計算轉乘成本，不需在節點內部寫複雜的條件跳躍邏輯。
+
+    C. 屬性設計 (Properties)節點屬性：station_id (唯一碼)、name (站名)、lines (行經線路陣列，用於受災波及分析)、zone (計費區)。關係屬性：line (線路名)、travel_time_min (行車或轉乘時間)、fare_standard / fare_first (艙等票價)。
+        【設計理由】：行車時間與票價是由「移動」產生的，成本屬於關係而非車站本身。車站節點存儲 lines 陣列，則能讓系統在某站故障時，立刻查出波及線路並向上層業務回報。
 
 2. 節點標識決策 (Node Identification)我們統一指定 station_id（地鐵 "MS" 開頭，鐵路 "NR" 開頭）作為所有車站節點的唯一識別碼。
-【選擇原因與實作保障】：對接開銷低：外部 API 與業務代碼皆以 station_id 為參數，直接以此為唯一識別能免去 Neo4j 原生內部 ID 的轉換開銷。前綴直接分流：透過識別前綴，代碼層能直接推斷其所屬網絡，動態決定 Cypher 的標籤過濾。資料庫層保障：在初始化（graph/seed.cypher）時已建立嚴格的唯一性約束與屬性索引，確保 $O(1)$ 查找速度並杜絕重複：
-CypherCREATE CONSTRAINT station_id_unique IF NOT EXISTS FOR (s:Station) REQUIRE s.station_id IS UNIQUE;
-CREATE CONSTRAINT metro_station_id_unique IF NOT EXISTS FOR (m:MetroStation) REQUIRE m.station_id IS UNIQUE;
+    【選擇原因與實作保障】：對接開銷低：外部 API 與業務代碼皆以 station_id 為參數，直接以此為唯一識別能免去 Neo4j 原生內部 ID 的轉換開銷。前綴直接分流：透過識別前綴，代碼層能直接推斷其所屬網絡，動態決定 Cypher 的標籤過濾。資料庫層保障：在初始化（graph/seed.cypher）時已建立嚴格的唯一性約束與屬性索引，確保 $O(1)$ 查找速度並杜絕重複：
+        CypherCREATE CONSTRAINT station_id_unique IF NOT EXISTS FOR (s:Station) REQUIRE s.station_id IS UNIQUE;
+    CREATE CONSTRAINT metro_station_id_unique IF NOT EXISTS FOR (m:MetroStation) REQUIRE m.station_id IS UNIQUE;
 
 3. 圖資料庫與關係資料庫之演算法對比論證對於路由（尋找最快/最便宜路徑、延遲分析）用例，圖資料庫不論在演算法或記憶體架構上皆完勝關係資料庫（RDB）：
-A. 最短路徑用例：圖 Dijkstra 演算法 vs. SQL 遞歸 CTE圖資料庫（Neo4j + APOC Dijkstra）：Neo4j 採用無索引遍歷（Index-free Adjacency），每個車站節點直接持有相鄰邊的記憶體指標。Dijkstra 演算法以優先佇列維護最小成本並沿指標步進，時間複雜度為 $O(|E| + |V| \log |V|)$。其搜尋空間僅限於連通拓撲，與全圖的總資料量無關。關係資料庫（SQL 遞歸 CTE）：RDB 必須依靠遞歸公用表表式（Recursive CTE）。在每一次遞歸的 JOIN 中，RDB 都必須拿 to_station_id 去 connections 表的 B+ Tree 索引裡做一次 $O(\log N)$ 的尋找，成本隨深度呈指數級放大。此外，為了解決交通網絡的「環路」問題，SQL 必須在記憶體裡幫每條路徑維護一個字串（如 path_set），容易導致路徑集爆炸、消耗大量 CPU 與記憶體拷貝開銷。
+    A. 最短路徑用例：圖 Dijkstra 演算法 vs. SQL 遞歸 CTE圖資料庫（Neo4j + APOC Dijkstra）：Neo4j 採用無索引遍歷（Index-free Adjacency），每個車站節點直接持有相鄰邊的記憶體指標。Dijkstra 演算法以優先佇列維護最小成本並沿指標步進，時間複雜度為 $O(|E| + |V| \log |V|)$。其搜尋空間僅限於連通拓撲，與全圖的總資料量無關。關係資料庫（SQL 遞歸 CTE）：RDB 必須依靠遞歸公用表表式（Recursive CTE）。在每一次遞歸的 JOIN 中，RDB 都必須拿 to_station_id 去 connections 表的 B+ Tree 索引裡做一次 $O(\log N)$ 的尋找，成本隨深度呈指數級放大。此外，為了解決交通網絡的「環路」問題，SQL 必須在記憶體裡幫每條路徑維護一個字串（如 path_set），容易導致路徑集爆炸、消耗大量 CPU 與記憶體拷貝開銷。
 
-B. 延遲波動分析：圖 BFS vs. SQL 多重 Self-Join圖資料庫：找出 $N$ 步內受波及的車站時（query_delay_ripple），Neo4j 執行原生廣度優先搜尋（BFS），直接從出事節點往外讀取指標，數到第 $N$ 層即停止，速度極快。關係資料庫：SQL 必須對同一張表進行 $N$ 次自我連接（Self-Join）或深層遞歸。當 $N \ge 3$ 時，執行計畫極易崩潰成全表掃描（Full Table Scan），產生巨大的磁碟 I/O 開銷。
+    B. 延遲波動分析：圖 BFS vs. SQL 多重 Self-Join圖資料庫：找出 $N$ 步內受波及的車站時（query_delay_ripple），Neo4j 執行原生廣度優先搜尋（BFS），直接從出事節點往外讀取指標，數到第 $N$ 層即停止，速度極快。關係資料庫：SQL 必須對同一張表進行 $N$ 次自我連接（Self-Join）或深層遞歸。當 $N \ge 3$ 時，執行計畫極易崩潰成全表掃描（Full Table Scan），產生巨大的磁碟 I/O 開銷。
 
 4. 具體查詢類型之圖模型表達論證以下為系統中成功實作的兩個核心查詢函數，說明圖結構如何支持並精簡複雜的表達：
-查詢一：跨網絡轉乘路徑查詢 (Cross-Network Interchange Path)實作函數：query_interchange_path(origin_id, destination_id)結構論證：地鐵與鐵路節點之間架設了 [:INTERCHANGE_TO] 關係，這打破了原本孤立的網絡邊界。
-CypherMATCH (origin:MetroStation {station_id: $origin_id}), (dest:RailStation {station_id: $dest_id})
-MATCH path = shortestPath((origin)-[:METRO_LINK|RAIL_LINK|INTERCHANGE_TO*]->(dest))
-RETURN path, reduce(t = 0, r IN relationships(path) | t + coalesce(r.travel_time_min, 0)) AS total_time
+    查詢一：跨網絡轉乘路徑查詢 (Cross-Network Interchange Path)實作函數：query_interchange_path(origin_id, destination_id)結構論證：地鐵與鐵路節點之間架設了 [:INTERCHANGE_TO] 關係，這打破了原本孤立的網絡邊界。
+    CypherMATCH (origin:MetroStation {station_id: $origin_id}), (dest:RailStation {station_id: $dest_id})
+    MATCH path = shortestPath((origin)-[:METRO_LINK|RAIL_LINK|INTERCHANGE_TO*]->(dest))
+    RETURN path, reduce(t = 0, r IN relationships(path) | t + coalesce(r.travel_time_min, 0)) AS total_time
 利用 | 算子，圖遍歷器可以同時將地鐵、鐵路與轉乘通道視為通路。再透過 reduce() 函數，演算法能一邊走一邊累加關係上的搭車時間或轉乘步行時間。這種將「轉乘」實體化為邊的結構，讓最短路徑遍歷完全不需編寫網絡切換的邏輯判斷。
 
-查詢二：避開故障車站的替代路線 (Alternative Routes Avoiding a Station)實作函數：query_alternative_routes(origin_id, destination_id, avoid_station_id)結構論證：系統需要為封閉車站規劃繞道方案，圖模型直接透過「路徑節點過濾與拓撲剪枝」來達成：CypherMATCH (origin:Station {station_id: $origin_id}), (dest:Station {station_id: $dest_id})
-MATCH path = allShortestPaths((origin)-[:METRO_LINK|RAIL_LINK*]->(dest))
-WHERE NONE(n IN nodes(path) WHERE n.station_id = $avoid_id AND n.station_id <> $origin_id)
-RETURN path LIMIT $limit
+    查詢二：避開故障車站的替代路線 (Alternative Routes Avoiding a Station)實作函數：query_alternative_routes(origin_id, destination_id, avoid_station_id)結構論證：系統需要為封閉車站規劃繞道方案，圖模型直接透過「路徑節點過濾與拓撲剪枝」來達成：CypherMATCH (origin:Station {station_id: $origin_id}), (dest:Station {station_id: $dest_id})
+    MATCH path = allShortestPaths((origin)-[:METRO_LINK|RAIL_LINK*]->(dest))
+    WHERE NONE(n IN nodes(path) WHERE n.station_id = $avoid_id AND n.station_id <> $origin_id)
+    RETURN path LIMIT $limit
 
 在 Neo4j 中，路徑是一等公民（path 變數）。透過 nodes(path) 抓出節點序列並搭配 NONE(...) 條件，圖引擎在記憶體中找路時，一旦發現潛在分支會觸碰故障的 avoid_station_id，就會在底層直接剪枝該拓撲分支（Pruning）。這種在結構層面直接剪枝的特性，比 SQL 需要生成所有連線再於最後過濾，效率高出許多。
 
