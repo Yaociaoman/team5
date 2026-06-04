@@ -33,33 +33,6 @@
 --  Fully restructured to respect cascading relational dependencies.
 -- ============================================================
 
-
--- ── LAYER 2: STATION VERTICES (車站主檔) ──────────────────────────────────────
-
--- ============================================================================
--- PK DESIGN DECISION JUSTIFICATION (Task 1 Criterion Compliance)
--- We explicitly evaluated SERIAL vs UUID vs VARCHAR for our Primary Keys:
--- 1. For Master Catalogs (e.g., stations, ticket_types): We rejected SERIAL and UUID 
---    because the transit authority provides standard natural alphanumeric codes (e.g. 'MS01', 'NS01'). 
---    Using VARCHAR(50) prevents unnecessary columns and enforces domain-level unique constraints.
--- 2. For Operational Ledgers (e.g., bookings, payments): VARCHAR(50) was chosen over 
---    standard UUID to align with the pre-formatted alphanumeric booking references from mock datasets, 
---    facilitating human-readable tickets and high-performance indexing without UUID storage overhead.
--- ============================================================================
-
--- ============================================================================
--- DELETE STRATEGY SPECIFICATION (Task 1 Criterion Compliance)
--- This system consistently implements a robust database deletion strategy:
--- 1. HARD DELETE WITH CASCADE: Applied to operational/dependent child tables 
---    (e.g., payments, user_credentials, schedule_stops) via 'ON DELETE CASCADE'
---    to prevent orphaned rows and maintain referential cleanups automatically.
--- 2. HARD DELETE WITH RESTRICT: Applied to transactional links pointing to master catalogs 
---    (e.g., stations inside schedules, ticket_types inside bookings) via 'ON DELETE RESTRICT' 
---    to prevent accidental deletion of core infrastructure components while data exists.
--- 3. STATUS-BASED RETENTION: Active order cancellations are managed via business logic 
---    by updating the 'status' column to 'cancelled' in the bookings ledger rather than row hiding.
--- ============================================================================
-
 -- ── LAYER 1: BASE CONFIGURATION TABLES (完全獨立的主檔，先建) ──────────────────
 
 -- 13. Ticket Types Setup
@@ -96,6 +69,8 @@ CREATE TABLE IF NOT EXISTS compensation_rules (
 );
 
 
+-- ── LAYER 2: STATION VERTICES (車站主檔) ──────────────────────────────────────
+
 -- 1. Metro Stations Master
 CREATE TABLE IF NOT EXISTS metro_stations (
     station_id VARCHAR(50) PRIMARY KEY,
@@ -116,18 +91,19 @@ CREATE TABLE IF NOT EXISTS national_rail_stations (
     is_interchange_national_rail BOOLEAN DEFAULT FALSE,
     interchange_national_rail_lines VARCHAR(20)[],
     is_interchange_metro BOOLEAN DEFAULT FALSE,
-    interchange_metro_station_id VARCHAR(50) REFERENCES metro_stations(station_id) ON DELETE RESTRICT DEFERRABLE INITIALLY IMMEDIATE,
+    interchange_metro_station_id VARCHAR(50) REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
     adjacent_stations JSONB
 );
 
--- Resolve circular foreign key dependencies between metro_stations and national_rail_stations
+-- Resolve circular foreign key dependency between metro_stations and national_rail_stations.
+-- DEFERRABLE allows both tables to be fully populated within the same transaction
+-- before the FK constraint is enforced at commit time.
 ALTER TABLE metro_stations
     DROP CONSTRAINT IF EXISTS fk_metro_interchange_nr,
     ADD CONSTRAINT fk_metro_interchange_nr
     FOREIGN KEY (interchange_national_rail_station_id)
     REFERENCES national_rail_stations(station_id)
     ON DELETE RESTRICT DEFERRABLE INITIALLY IMMEDIATE;
-
 
 -- ── LAYER 3: TIMETABLES & SCHEDULES (Train Timetable Master Data) ──────────────────
 -- 3. Metro Schedules
@@ -137,7 +113,6 @@ CREATE TABLE IF NOT EXISTS metro_schedules (
     direction VARCHAR(20) NOT NULL,
     origin_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
     destination_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
-    stops_in_order VARCHAR(50)[] NOT NULL,
     first_train_time TIME NOT NULL,
     last_train_time TIME NOT NULL,
     travel_time_from_origin_min JSONB NOT NULL,
@@ -159,12 +134,10 @@ CREATE TABLE IF NOT EXISTS metro_schedule_stops (
 -- 4. National Rail Schedules
 CREATE TABLE IF NOT EXISTS national_rail_schedules (
     schedule_id VARCHAR(50) PRIMARY KEY,
-    line VARCHAR(20) NOT NULL,
     service_type VARCHAR(20) NOT NULL,
     direction VARCHAR(20) NOT NULL,
     origin_station_id VARCHAR(50) NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
     destination_station_id VARCHAR(50) NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
-    stops_in_order VARCHAR(50)[] NOT NULL,
     first_train_time TIME NOT NULL,
     last_train_time TIME NOT NULL,
     travel_time_from_origin_min JSONB NOT NULL,
@@ -198,7 +171,7 @@ CREATE TABLE IF NOT EXISTS registered_users (
     full_name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     phone VARCHAR(20),
-    date_of_birth DATE NOT NULL, -- Note: DATE is intentionally used here instead of TIMESTAMPTZ because birth dates are whole days and do not have time/timezone components.
+    date_of_birth DATE NOT NULL,
     secret_question VARCHAR(255) NOT NULL,
     secret_answer VARCHAR(255) NOT NULL,
     registered_at TIMESTAMPTZ DEFAULT NOW(),
@@ -223,7 +196,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     schedule_id VARCHAR(50) NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE RESTRICT,
     origin_station_id VARCHAR(50) NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
     destination_station_id VARCHAR(50) NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
-    travel_date DATE NOT NULL, -- Note: DATE is intentionally used here instead of TIMESTAMPTZ as the specific day is required, while departure_time holds the time component.
+    travel_date DATE NOT NULL,
     departure_time TIME NOT NULL,
     ticket_type VARCHAR(20) NOT NULL REFERENCES ticket_types(ticket_type) ON DELETE RESTRICT,
     fare_class VARCHAR(20) NOT NULL,
@@ -235,26 +208,6 @@ CREATE TABLE IF NOT EXISTS bookings (
     booked_at TIMESTAMPTZ NOT NULL,
     travelled_at TIMESTAMPTZ
 );
-
-
--- 12. Metro High-Volume Travel Ledger
-CREATE TABLE IF NOT EXISTS metro_travel_history (
-    trip_id VARCHAR(50) PRIMARY KEY,
-    user_id VARCHAR(50) NOT NULL REFERENCES registered_users(user_id) ON DELETE CASCADE,
-    schedule_id VARCHAR(50) NOT NULL REFERENCES metro_schedules(schedule_id) ON DELETE RESTRICT,
-    origin_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
-    destination_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
-    travel_date DATE NOT NULL, -- Note: DATE is intentionally used here instead of TIMESTAMPTZ as the specific calendar day is required for metro travel.
-    ticket_type VARCHAR(20) NOT NULL REFERENCES ticket_types(ticket_type) ON DELETE RESTRICT,
-    day_pass_ref VARCHAR(50),
-    stops_travelled INT,
-    amount_usd NUMERIC(10, 2) NOT NULL,
-    status VARCHAR(20) NOT NULL,
-    purchased_at TIMESTAMPTZ,
-    travelled_at TIMESTAMPTZ
-);
-
-
 
 -- 7. Payments Gateways Ledger
 CREATE TABLE IF NOT EXISTS payments (
@@ -284,6 +237,22 @@ CREATE TABLE IF NOT EXISTS feedback (
     )
 );
 
+-- 12. Metro High-Volume Travel Ledger
+CREATE TABLE IF NOT EXISTS metro_travel_history (
+    trip_id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL REFERENCES registered_users(user_id) ON DELETE CASCADE,
+    schedule_id VARCHAR(50) NOT NULL REFERENCES metro_schedules(schedule_id) ON DELETE RESTRICT,
+    origin_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
+    destination_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
+    travel_date DATE NOT NULL,
+    ticket_type VARCHAR(20) NOT NULL REFERENCES ticket_types(ticket_type) ON DELETE RESTRICT,
+    day_pass_ref VARCHAR(50),
+    stops_travelled INT,
+    amount_usd NUMERIC(10, 2) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    purchased_at TIMESTAMPTZ,
+    travelled_at TIMESTAMPTZ
+);
 
 -- ============================================================
 --  VECTOR SCHEMA  (RAG / Help Desk) — do not modify
