@@ -54,7 +54,7 @@ def seed():
         # 1. Dynamically create Metro Station nodes
         session.run("""
         UNWIND $metro_stations AS m
-        MERGE (n:MetroStation {station_id: m.station_id})
+        MERGE (n:Station:MetroStation {station_id: m.station_id})
         SET n.name = m.name,
             n.lines = m.lines,
             n.zone  = m.zone
@@ -64,7 +64,7 @@ def seed():
         # 2. Dynamically create National Rail Station nodes
         session.run("""
         UNWIND $rail_stations AS r
-        MERGE (n:RailStation {station_id: r.station_id})
+        MERGE (n:Station:RailStation {station_id: r.station_id})
         SET n.name = r.name,
             n.lines = r.lines,
             n.zone  = r.zone
@@ -88,9 +88,9 @@ def seed():
         # 4. Dynamically Create National Rail Links (Adjacent Station Connections)
         session.run("""
         UNWIND $rail_stations AS r
-        MATCH (src:Station:NationalRailStation {station_id: r.station_id})
+        MATCH (src:Station:RailStation {station_id: r.station_id})
         UNWIND r.adjacent_stations AS adj
-        MATCH (dest:Station:NationalRailStation {station_id: adj.station_id})
+        MATCH (dest:Station:RailStation {station_id: adj.station_id})
         MERGE (src)-[rel:RAIL_LINK {line: adj.line}]->(dest)
         SET rel.travel_time_min = adj.travel_time_min,
             rel.fare_standard = 1.50,
@@ -105,7 +105,7 @@ def seed():
         UNWIND $metro_stations AS m
         WITH m WHERE m.is_interchange_national_rail = true AND m.interchange_national_rail_station_id IS NOT NULL
         MATCH (ms:Station:MetroStation {station_id: m.station_id})
-        MATCH (rs:Station:NationalRailStation {station_id: m.interchange_national_rail_station_id})
+        MATCH (rs:Station:RailStation {station_id: m.interchange_national_rail_station_id})
         MERGE (ms)-[rel1:INTERCHANGE_TO]->(rs)
         SET rel1.travel_time_min = 5,
             rel1.fare = 0.0,
@@ -122,7 +122,7 @@ def seed():
         session.run("""
         UNWIND $rail_stations AS r
         WITH r WHERE r.is_interchange_metro = true AND r.interchange_metro_station_id IS NOT NULL
-        MATCH (rs:Station:NationalRailStation {station_id: r.station_id})
+        MATCH (rs:Station:RailStation {station_id: r.station_id})
         MATCH (ms:Station:MetroStation {station_id: r.interchange_metro_station_id})
         MERGE (rs)-[rel1:INTERCHANGE_TO]->(ms)
         SET rel1.travel_time_min = 5,
@@ -141,7 +141,7 @@ def seed():
         session.run("""
         UNWIND $rail_stations AS r
         WITH r WHERE r.is_interchange_metro = true AND r.interchange_metro_station_id IS NOT NULL
-        MATCH (rs:Station:NationalRailStation {station_id: r.station_id})
+        MATCH (rs:Station:RailStation {station_id: r.station_id})
         MATCH (ms:Station:MetroStation {station_id: r.interchange_metro_station_id})
         MERGE (rs)-[rel1:INTERCHANGE_TO]->(ms)
         SET rel1.travel_time_min = 5,
