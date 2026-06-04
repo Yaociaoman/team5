@@ -33,7 +33,7 @@
 --  Fully restructured to respect cascading relational dependencies.
 -- ============================================================
 
--- ── LAYER 1: BASE CONFIGURATION TABLES (完全獨立的主檔，先建) ──────────────────
+-- ── LAYER 1: BASE CONFIGURATION TABLES (Master Data / Completely Independent, Create First) ──
 
 -- 13. Ticket Types Setup
 CREATE TABLE IF NOT EXISTS ticket_types (
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS compensation_rules (
 );
 
 
--- ── LAYER 2: STATION VERTICES (車站主檔) ──────────────────────────────────────
+-- ── LAYER 2: STATION VERTICES (Station Master Data) ───────────────────────────
 
 -- 1. Metro Stations Master
 CREATE TABLE IF NOT EXISTS metro_stations (
@@ -105,7 +105,7 @@ ALTER TABLE metro_stations
     REFERENCES national_rail_stations(station_id)
     ON DELETE RESTRICT DEFERRABLE INITIALLY IMMEDIATE;
 
--- ── LAYER 3: TIMETABLES & SCHEDULES (車次時刻表主檔) ──────────────────────────
+-- ── LAYER 3: TIMETABLES & SCHEDULES (Train Timetable Master Data) ──────────────────
 
 -- 3. Metro Schedules
 CREATE TABLE IF NOT EXISTS metro_schedules (
@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
 );
 
 
--- ── LAYER 4: USER DEMOGRAPHICS & AUTHENTICATION (使用者基本與身分認證) ──────────
+-- ── LAYER 4: USER DEMOGRAPHICS & AUTHENTICATION (User Demographics & Authentication) ──────────
 
 -- 5. Registered Users Profile
 CREATE TABLE IF NOT EXISTS registered_users (
@@ -188,7 +188,7 @@ CREATE TABLE IF NOT EXISTS user_credentials (
 COMMENT ON TABLE user_credentials IS 'Isolates highly sensitive authentication cryptograms from standard user demographic reads.';
 
 
--- ── LAYER 5: TRANSACTION LEDGERS (高度依賴前方主檔的流向與訂單紀錄) ─────────────
+-- ── LAYER 5: TRANSACTION LEDGERS (Highly Dependent on Forward Master Data) ─────────────
 
 -- 6. Bookings Financial Ledger
 CREATE TABLE IF NOT EXISTS bookings (

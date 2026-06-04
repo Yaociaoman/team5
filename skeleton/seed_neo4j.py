@@ -57,13 +57,16 @@ def seed():
             print("  Warning: databases/graph/seed.cypher not found.")
 
         # --------------------------------------------------------------------------------
-        # 遵守專案業務邏輯與架構規定 (Project-Specific Constraints & Rules)
-        # 條件 3: 地鐵換線時間 - 不考慮地鐵站內換線時間，因此不建立額外的站內轉乘延遲邊。
-        # 條件 5: 車站 ID 格式 - station_id 雖然在 RDB 設為 VARCHAR(10)，在此處視為 String (如 'MS01') 儲存。
-        # 條件 6: 時刻表與停靠站設計 - 停靠站關聯表在 RDB 實作，Neo4j 中則以 CONNECTED_TO 邊表達物理相鄰關係。
+        # Project-Specific Constraints & Rules
+        # Condition 3: Subway Transfer Time - In-station transfer time is not considered; 
+        #              therefore, no additional in-station transfer delay edges are created.
+        # Condition 5: Station ID Format - Although station_id is defined as VARCHAR(10) in the RDB, 
+        #              it is stored here as a String (e.g., 'MS01').
+        # Condition 6: Timetable & Stop Design - The stop association table is implemented in the RDB, 
+        #              while the physical adjacency relationship is expressed using CONNECTED_TO edges in Neo4j.
         # --------------------------------------------------------------------------------
-
-        # 1. 動態建立地鐵站點 (Metro Stations)
+       
+        # 1. Dynamically create Metro Station nodes
         session.run("""
         UNWIND $metro_stations AS m
         MERGE (n:Station:MetroStation {station_id: m.station_id})
@@ -73,7 +76,7 @@ def seed():
         """, metro_stations=metro_stations)
         print("  Dynamically created Metro Station nodes")
 
-        # 2. 動態建立火車站點 (National Rail Stations)
+        # 2. Dynamically create National Rail Station nodes
         session.run("""
         UNWIND $rail_stations AS r
         MERGE (n:Station:NationalRailStation {station_id: r.station_id})
@@ -83,7 +86,7 @@ def seed():
         """, rail_stations=rail_stations)
         print("  Dynamically created National Rail Station nodes")
 
-        # 3. 動態建立地鐵相鄰站點連線 (Metro Links)
+        # 3. Dynamically Create Metro Links (Adjacent Station Connections)
         session.run("""
         UNWIND $metro_stations AS m
         MATCH (src:Station:MetroStation {station_id: m.station_id})
@@ -97,7 +100,7 @@ def seed():
         """, metro_stations=metro_stations)
         print("  Dynamically created Metro relationships")
 
-        # 4. 動態建立火車相鄰站點連線 (National Rail Links)
+        # 4. Dynamically Create National Rail Links (Adjacent Station Connections)
         session.run("""
         UNWIND $rail_stations AS r
         MATCH (src:Station:NationalRailStation {station_id: r.station_id})
@@ -110,9 +113,9 @@ def seed():
         """, rail_stations=rail_stations)
         print("  Dynamically created National Rail relationships")
 
-        # 5. 動態建立跨系統步行轉乘連線 (Transfer Links between Metro and Rail)
-        # 嚴格使用 INTERCHANGE_TO 與 travel_time_min 以對應演算法設定
-        # 從 Metro 出發的轉乘設定
+        # 5. Dynamically Create Transfer Links between Metro and Rail
+        # Strictly use INTERCHANGE_TO with travel_time_min to correspond to the algorithmic settings
+        # Transfer settings from Metro
         session.run("""
         UNWIND $metro_stations AS m
         WITH m WHERE m.is_interchange_national_rail = true AND m.interchange_national_rail_station_id IS NOT NULL
@@ -130,7 +133,7 @@ def seed():
             rel2.fare_first = 0.0
         """, metro_stations=metro_stations)
 
-        # 從 Rail 出發的轉乘設定（確保雙向對應無遺漏）
+        # Transfer settings from National Rail (ensure bidirectional correspondence)
         session.run("""
         UNWIND $rail_stations AS r
         WITH r WHERE r.is_interchange_metro = true AND r.interchange_metro_station_id IS NOT NULL
@@ -149,7 +152,7 @@ def seed():
         """, rail_stations=rail_stations)
         print("  Dynamically created Transfer relationships (Walking transfers)")
 
-        # 從 Rail 出發的轉乘設定（確保雙向對應無遺漏）
+        # Transfer settings from National Rail (ensure bidirectional correspondence)
         session.run("""
         UNWIND $rail_stations AS r
         WITH r WHERE r.is_interchange_metro = true AND r.interchange_metro_station_id IS NOT NULL
