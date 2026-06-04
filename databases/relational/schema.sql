@@ -116,9 +116,17 @@ CREATE TABLE IF NOT EXISTS national_rail_stations (
     is_interchange_national_rail BOOLEAN DEFAULT FALSE,
     interchange_national_rail_lines VARCHAR(20)[],
     is_interchange_metro BOOLEAN DEFAULT FALSE,
-    interchange_metro_station_id VARCHAR(50) REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
+    interchange_metro_station_id VARCHAR(50) REFERENCES metro_stations(station_id) ON DELETE RESTRICT DEFERRABLE INITIALLY IMMEDIATE,
     adjacent_stations JSONB
 );
+
+-- 解決 metro_stations 與 national_rail_stations 之間的循環外鍵依賴
+ALTER TABLE metro_stations
+    DROP CONSTRAINT IF EXISTS fk_metro_interchange_nr,
+    ADD CONSTRAINT fk_metro_interchange_nr
+    FOREIGN KEY (interchange_national_rail_station_id)
+    REFERENCES national_rail_stations(station_id)
+    ON DELETE RESTRICT DEFERRABLE INITIALLY IMMEDIATE;
 
 
 -- ── LAYER 3: TIMETABLES & SCHEDULES (車次時刻表主檔) ──────────────────────────
@@ -229,6 +237,26 @@ CREATE TABLE IF NOT EXISTS bookings (
     travelled_at TIMESTAMPTZ
 );
 
+
+-- 12. Metro High-Volume Travel Ledger
+CREATE TABLE IF NOT EXISTS metro_travel_history (
+    trip_id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL REFERENCES registered_users(user_id) ON DELETE CASCADE,
+    schedule_id VARCHAR(50) NOT NULL REFERENCES metro_schedules(schedule_id) ON DELETE RESTRICT,
+    origin_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
+    destination_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
+    travel_date DATE NOT NULL, -- Note: DATE is intentionally used here instead of TIMESTAMPTZ as the specific calendar day is required for metro travel.
+    ticket_type VARCHAR(20) NOT NULL REFERENCES ticket_types(ticket_type) ON DELETE RESTRICT,
+    day_pass_ref VARCHAR(50),
+    stops_travelled INT,
+    amount_usd NUMERIC(10, 2) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    purchased_at TIMESTAMPTZ,
+    travelled_at TIMESTAMPTZ
+);
+
+
+
 -- 7. Payments Gateways Ledger
 CREATE TABLE IF NOT EXISTS payments (
     payment_id   VARCHAR(50)    PRIMARY KEY,
@@ -257,22 +285,6 @@ CREATE TABLE IF NOT EXISTS feedback (
     )
 );
 
--- 12. Metro High-Volume Travel Ledger
-CREATE TABLE IF NOT EXISTS metro_travel_history (
-    trip_id VARCHAR(50) PRIMARY KEY,
-    user_id VARCHAR(50) NOT NULL REFERENCES registered_users(user_id) ON DELETE CASCADE,
-    schedule_id VARCHAR(50) NOT NULL REFERENCES metro_schedules(schedule_id) ON DELETE RESTRICT,
-    origin_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
-    destination_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
-    travel_date DATE NOT NULL, -- Note: DATE is intentionally used here instead of TIMESTAMPTZ as the specific calendar day is required for metro travel.
-    ticket_type VARCHAR(20) NOT NULL REFERENCES ticket_types(ticket_type) ON DELETE RESTRICT,
-    day_pass_ref VARCHAR(50),
-    stops_travelled INT,
-    amount_usd NUMERIC(10, 2) NOT NULL,
-    status VARCHAR(20) NOT NULL,
-    purchased_at TIMESTAMPTZ,
-    travelled_at TIMESTAMPTZ
-);
 
 -- ============================================================
 --  VECTOR SCHEMA  (RAG / Help Desk) — do not modify
