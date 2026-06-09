@@ -182,12 +182,13 @@ def query_cheapest_route(
         label, rel_type = "RailStation", "RAIL_LINK"
 
     # 3. Build the Cypher query using APOC Dijkstra algorithm
-    #    - Uses fare_usd as the edge weight property instead of travel_time_min
-    #    - Both METRO_LINK and RAIL_LINK relationships store fare_usd
+    #    - Both METRO_LINK and RAIL_LINK relationships store fare_standard and fare_first
+    fare_prop = "fare_standard" if fare_class == "standard" else "fare_first"
+
     cypher = f"""
         MATCH (origin:{label} {{station_id: $origin_id}})
         MATCH (dest:{label}   {{station_id: $dest_id}})
-        CALL apoc.algo.dijkstra(origin, dest, '{rel_type}', 'fare_usd')
+        CALL apoc.algo.dijkstra(origin, dest, '{rel_type}', '{fare_prop}')
         YIELD path, weight
         RETURN path, weight
     """
@@ -218,7 +219,7 @@ def query_cheapest_route(
                     "from":     nodes[i]["station_id"],
                     "to":       nodes[i + 1]["station_id"],
                     "line":     r.get("line", ""),
-                    "fare_usd": r.get("fare_usd", 0),
+                    "fare_usd": float(r.get(fare_prop, 0.0)),
                 }
                 for i, r in enumerate(rels)
             ]
@@ -238,6 +239,7 @@ def query_alternative_routes(
     avoid_station_id: str,
     network: str = "auto",
     max_routes: int = 3,
+    fare_class: str = "standard",
 ) -> list[list[dict]]:
     """
     Find paths between two stations that avoid a specific intermediate station.
@@ -249,6 +251,7 @@ def query_alternative_routes(
         avoid_station_id:  e.g. "NR03"
         network:           "metro", "rail", or "auto"
         max_routes:        max number of alternatives to return
+        fare_class:        "standard" or "first" (national rail only)
 
     Returns:
         List of routes, each route is a list of leg dicts
@@ -266,18 +269,22 @@ def query_alternative_routes(
         label, rel_type = "MetroStation", "METRO_LINK"
     else:
         label, rel_type = "RailStation", "RAIL_LINK"
+        
+    fare_prop = "fare_standard" if fare_class == "standard" else "fare_first"
 
-    # 3. Build the Cypher query using allShortestPaths
+    # 3. Build the Cypher query using variable-length paths
     #    - NONE(...) clause filters out any path that passes through the avoided station
     #    - The avoided station is allowed to be the origin or destination (edge case guard)
+    #    - ORDER BY length(path) to return the shortest available alternative routes
     cypher = f"""
         MATCH (origin:{label} {{station_id: $origin_id}})
         MATCH (dest:{label}   {{station_id: $dest_id}})
-        MATCH path = allShortestPaths((origin)-[:{rel_type}*]->(dest))
+        MATCH path = (origin)-[:{rel_type}*1..15]->(dest)
         WHERE NONE(n IN nodes(path) WHERE n.station_id = $avoid_id
                    AND n.station_id <> $origin_id
                    AND n.station_id <> $dest_id)
         RETURN path
+        ORDER BY length(path)
         LIMIT $limit
     """
 
@@ -303,7 +310,7 @@ def query_alternative_routes(
                         "to":       nodes[i + 1]["station_id"],
                         "line":     r.get("line", ""),
                         "time_min": r.get("travel_time_min", 0),
-                        "fare_usd": r.get("fare_usd", 0),
+                        "fare_usd": float(r.get(fare_prop, 0.0)),
                     }
                     for i, r in enumerate(rels)
                 ]
@@ -312,7 +319,7 @@ def query_alternative_routes(
     return routes
 
 
-# ── CROSS-NETWORK INTERCHANGE PATH ───────────────────────────────────────────
+# ── CROSS-NETWORK INTERCHANGE_TO PATH ───────────────────────────────────────────
 
 def query_interchange_path(origin_id: str, destination_id: str) -> dict:
     """
@@ -340,14 +347,14 @@ def query_interchange_path(origin_id: str, destination_id: str) -> dict:
     dest_label   = "MetroStation" if destination_id.startswith("MS") else "RailStation"
 
     # 2. Build the Cypher query using shortestPath
-    #    - Allows traversal across METRO_LINK, RAIL_LINK, and INTERCHANGE relationships
+    #    - Allows traversal across METRO_LINK, RAIL_LINK, and INTERCHANGE_TO relationships
     #    - reduce() accumulates total travel time across all relationships in the path
-    #    - coalesce() handles INTERCHANGE relationships which use walk_time_min instead
+    #    - coalesce() handles INTERCHANGE_TO relationships which use walk_time_min instead
     cypher = f"""
         MATCH (origin:{origin_label} {{station_id: $origin_id}})
         MATCH (dest:{dest_label}     {{station_id: $dest_id}})
         MATCH path = shortestPath(
-            (origin)-[:METRO_LINK|RAIL_LINK|INTERCHANGE*]->(dest)
+            (origin)-[:METRO_LINK|RAIL_LINK|INTERCHANGE_TO*]-(dest)
         )
         RETURN path,
                reduce(t = 0, r IN relationships(path) |
@@ -375,15 +382,17 @@ def query_interchange_path(origin_id: str, destination_id: str) -> dict:
                 for n in nodes
             ]
 
-            # 5. Identify interchange points — relationships of type INTERCHANGE
+            # 5. Identify interchange points — relationships of type INTERCHANGE_TO
             #    These represent the physical walk between metro and rail platforms
             interchange_points = []
             for i, r in enumerate(rels):
-                if r.type == "INTERCHANGE":
+                if r.type == "INTERCHANGE_TO":
+                    # Check both walk_time_min and travel_time_min as fallback
+                    walk_time = r.get("walk_time_min", r.get("travel_time_min", 5))
                     interchange_points.append({
                         "from_station":  nodes[i]["station_id"],
                         "to_station":    nodes[i + 1]["station_id"],
-                        "walk_time_min": r.get("walk_time_min", 5),
+                        "walk_time_min": walk_time,
                     })
 
             return {
@@ -419,11 +428,11 @@ def query_delay_ripple(delayed_station_id: str, hops: int = 2) -> list[dict]:
         MATCH (source)
         WHERE (source:MetroStation OR source:RailStation)
           AND source.station_id = $station_id
-        MATCH (source)-[:METRO_LINK|RAIL_LINK|INTERCHANGE*1..{hops}]-(neighbor)
+        MATCH (source)-[:METRO_LINK|RAIL_LINK|INTERCHANGE_TO*1..{hops}]-(neighbor)
         WHERE neighbor.station_id <> $station_id
         WITH neighbor,
              min(length(shortestPath(
-                 (source)-[:METRO_LINK|RAIL_LINK|INTERCHANGE*]->(neighbor)
+                 (source)-[:METRO_LINK|RAIL_LINK|INTERCHANGE_TO*]->(neighbor)
              ))) AS hops_away
         RETURN DISTINCT
                neighbor.station_id AS station_id,
@@ -467,7 +476,7 @@ def query_station_connections(station_id: str) -> list[dict]:
                neighbor.name       AS name,
                r.line              AS line,
                r.travel_time_min   AS travel_time_min,
-               r.fare_usd          AS fare_usd
+               r.fare_standard     AS fare_usd
         ORDER BY neighbor.station_id
     """
 
