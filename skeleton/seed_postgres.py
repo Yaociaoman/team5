@@ -113,33 +113,35 @@ def seed_national_rail_stations(cur):
 def seed_metro_schedules(cur):
     data = load("metro_schedules.json")
     table = "metro_schedules"
-    # stops_in_order 已從主表移除，改由 metro_schedule_stops junction table 儲存
+    
+    # 建立捷運車站 Code 到真實 INT ID 的快速對照表
+    cur.execute("SELECT code, station_id FROM metro_stations;")
+    station_map = {row[0]: row[1] for row in cur.fetchall()}
+    
+    # 將欄位名稱對照到 schema 的文字 code 欄位，把自增的主鍵保留給資料庫算
     columns = [
-        "schedule_id", "line", "direction", "origin_station_id",
+        "code", "line", "direction", "origin_station_id",
         "destination_station_id", "first_train_time",
         "last_train_time", "travel_time_from_origin_min", "base_fare_usd",
         "per_stop_rate_usd", "frequency_min", "operates_on"
     ]
-    # 加了"stops_in_order",
+    
     rows = []
-    stops_rows = []
+    schedule_stops_data = []
 
     for item in data:
-        # 查 origin/destination station_id (INT) by code
-        cur.execute("SELECT station_id FROM metro_stations WHERE code = %s", (item["origin_station_id"],))
-        orig = cur.fetchone()
-        cur.execute("SELECT station_id FROM metro_stations WHERE code = %s", (item["destination_station_id"],))
-        dest = cur.fetchone()
-        if not orig or not dest:
-            print(f"    ⚠ station not found for schedule {item['schedule_id']}, skipping")
+        orig_id = station_map.get(item["origin_station_id"])
+        dest_id = station_map.get(item["destination_station_id"])
+        if not orig_id or not dest_id:
+            print(f"    ⚠ Station not found for metro schedule {item['schedule_id']}, skipping")
             continue
 
-        sched_rows.append((
-            item["schedule_id"],                                # → code
+        row = (
+            item["schedule_id"],                                # → 寫入 code 欄位 (e.g., 'MS_SCH01')
             item["line"],
             item["direction"],
-            item["origin_station_id"],
-            item["destination_station_id"],
+            orig_id,                                            # 真實的 INT ID
+            dest_id,                                            # 真實的 INT ID
             item["first_train_time"],
             item["last_train_time"],
             json.dumps(item["travel_time_from_origin_min"]),
@@ -149,11 +151,32 @@ def seed_metro_schedules(cur):
             item["operates_on"]
         )
         rows.append(row)
-        # Table 3b — 停靠順序正規化寫入 metro_schedule_stops
-        for order_idx, station_id in enumerate(item["stops_in_order"]):
-            stops_rows.append((item["schedule_id"], station_id, order_idx + 1))
+        
+        # 暫存停靠站代碼，稍後轉換
+        schedule_stops_data.append({
+            "schedule_code": item["schedule_id"],
+            "stops": item["stops_in_order"]
+        })
+
+    # 1. 批次寫入 metro_schedules 主表
     inserted = insert_many(cur, table, columns, rows)
     print(f"  - Seeded {inserted} rows into {table}")
+    
+    # 2. 查出剛才主表寫入後，資料庫自動生成的自增主鍵 schedule_id
+    cur.execute("SELECT code, schedule_id FROM metro_schedules;")
+    sched_map = {row[0]: row[1] for row in cur.fetchall()}
+    
+    # 3. 整合並批次寫入 Junction Table (metro_schedule_stops)
+    stops_rows = []
+    for s_data in schedule_stops_data:
+        db_sched_id = sched_map.get(s_data["schedule_code"])
+        if not db_sched_id:
+            continue
+        for order_idx, st_code in enumerate(s_data["stops"]):
+            db_st_id = station_map.get(st_code)
+            if db_st_id:
+                stops_rows.append((db_sched_id, db_st_id, order_idx + 1))
+                
     if stops_rows:
         execute_values(cur,
             "INSERT INTO metro_schedule_stops (schedule_id, station_id, stop_order) VALUES %s ON CONFLICT DO NOTHING",
@@ -164,26 +187,36 @@ def seed_metro_schedules(cur):
 def seed_national_rail_schedules(cur):
     data = load("national_rail_schedules.json")
     table = "national_rail_schedules"
-    # line / stops_in_order / passed_through_stations 不存在於 schema，已移除
-    # stops_in_order 改由 rail_schedule_stops junction table 儲存
+    
+    # 建立國鐵車站 Code 到真實 INT ID 的快速對照表
+    cur.execute("SELECT code, station_id FROM national_rail_stations;")
+    station_map = {row[0]: row[1] for row in cur.fetchall()}
+    
+    # 將欄位名稱第一個元素修正為 code
     columns = [
-        "schedule_id", "service_type", "direction",
+        "code", "service_type", "direction",
         "origin_station_id", "destination_station_id",
         "first_train_time", "last_train_time",
         "travel_time_from_origin_min", "fare_classes",
         "frequency_min", "operates_on"
     ]
-    # 加了"stops_in_order",
+    
     rows = []
-    stops_rows = []
+    schedule_stops_data = []
 
     for item in data:
+        orig_id = station_map.get(item["origin_station_id"])
+        dest_id = station_map.get(item["destination_station_id"])
+        if not orig_id or not dest_id:
+            print(f"    ⚠ Station not found for rail schedule {item['schedule_id']}, skipping")
+            continue
+
         row = (
-            item["schedule_id"],
+            item["schedule_id"],                                # → 寫入 code 欄位 (e.g., 'NR_SCH01')
             item["service_type"],
             item["direction"],
-            item["origin_station_id"],
-            item["destination_station_id"],
+            orig_id,                                            # 真實的 INT ID
+            dest_id,                                            # 真實的 INT ID
             item["first_train_time"],
             item["last_train_time"],
             json.dumps(item["travel_time_from_origin_min"]),
@@ -192,11 +225,32 @@ def seed_national_rail_schedules(cur):
             item["operates_on"]
         )
         rows.append(row)
-        # Table 4b — 停靠順序正規化寫入 rail_schedule_stops
-        for order_idx, station_id in enumerate(item["stops_in_order"]):
-            stops_rows.append((item["schedule_id"], station_id, order_idx + 1))
+        
+        # 暫存停靠站代碼，稍後轉換
+        schedule_stops_data.append({
+            "schedule_code": item["schedule_id"],
+            "stops": item["stops_in_order"]
+        })
+
+    # 1. 批次寫入 national_rail_schedules 主表
     inserted = insert_many(cur, table, columns, rows)
     print(f"  - Seeded {inserted} rows into {table}")
+    
+    # 2. 查出剛才主表寫入後，資料庫自動生成的自增主鍵 schedule_id
+    cur.execute("SELECT code, schedule_id FROM national_rail_schedules;")
+    sched_map = {row[0]: row[1] for row in cur.fetchall()}
+    
+    # 3. 整合並批次寫入 Junction Table (rail_schedule_stops)
+    stops_rows = []
+    for s_data in schedule_stops_data:
+        db_sched_id = sched_map.get(s_data["schedule_code"])
+        if not db_sched_id:
+            continue
+        for order_idx, st_code in enumerate(s_data["stops"]):
+            db_st_id = station_map.get(st_code)
+            if db_st_id:
+                stops_rows.append((db_sched_id, db_st_id, order_idx + 1))
+                
     if stops_rows:
         execute_values(cur,
             "INSERT INTO rail_schedule_stops (schedule_id, station_id, stop_order) VALUES %s ON CONFLICT DO NOTHING",
