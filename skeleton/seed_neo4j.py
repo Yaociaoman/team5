@@ -136,9 +136,9 @@ def seed():
         # 5b. Transfer settings FROM Rail TO Metro (Bidirectional)
         session.run("""
         UNWIND $rail_stations AS r
-        WITH r WHERE r.is_interchange_metro = true AND r.interchange_metro_station_code IS NOT NULL
+        WITH r WHERE r.is_interchange_metro = true AND r.interchange_metro_station_id IS NOT NULL
         MATCH (rs:RailStation {station_id: r.station_id})
-        MATCH (ms:MetroStation {station_id: r.interchange_metro_station_code})
+        MATCH (ms:MetroStation {station_id: r.interchange_metro_station_id})
         
         MERGE (rs)-[rel1:INTERCHANGE_TO]->(ms)
         SET rel1.travel_time_min = 5,
