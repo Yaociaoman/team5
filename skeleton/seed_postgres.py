@@ -112,7 +112,16 @@ def seed_national_rail_stations(cur):
 
 def seed_metro_schedules(cur):
     data = load("metro_schedules.json")
-    sched_rows = []
+    table = "metro_schedules"
+    # stops_in_order 已從主表移除，改由 metro_schedule_stops junction table 儲存
+    columns = [
+        "schedule_id", "line", "direction", "origin_station_id",
+        "destination_station_id", "first_train_time",
+        "last_train_time", "travel_time_from_origin_min", "base_fare_usd",
+        "per_stop_rate_usd", "frequency_min", "operates_on"
+    ]
+    # 加了"stops_in_order",
+    rows = []
     stops_rows = []
 
     for item in data:
@@ -129,38 +138,22 @@ def seed_metro_schedules(cur):
             item["schedule_id"],                                # → code
             item["line"],
             item["direction"],
-            orig[0],                                            # origin_station_id INT
-            dest[0],                                            # destination_station_id INT
+            item["origin_station_id"],
+            item["destination_station_id"],
             item["first_train_time"],
             item["last_train_time"],
             json.dumps(item["travel_time_from_origin_min"]),
             item["base_fare_usd"],
             item["per_stop_rate_usd"],
             item["frequency_min"],
-            item["operates_on"],
-        ))
-
-    inserted = insert_many(cur, "metro_schedules", [
-        "code", "line", "direction",
-        "origin_station_id", "destination_station_id",
-        "first_train_time", "last_train_time",
-        "travel_time_from_origin_min", "base_fare_usd",
-        "per_stop_rate_usd", "frequency_min", "operates_on",
-    ], sched_rows)
-    print(f"  - Seeded {inserted} rows into metro_schedules")
-
-    # stops: code → schedule_id INT, station code → station_id INT
-    for item in data:
-        cur.execute("SELECT schedule_id FROM metro_schedules WHERE code = %s", (item["schedule_id"],))
-        sched = cur.fetchone()
-        if not sched:
-            continue
-        for order_idx, station_code in enumerate(item.get("stops_in_order", [])):
-            cur.execute("SELECT station_id FROM metro_stations WHERE code = %s", (station_code,))
-            st = cur.fetchone()
-            if st:
-                stops_rows.append((sched[0], st[0], order_idx + 1))
-
+            item["operates_on"]
+        )
+        rows.append(row)
+        # Table 3b — 停靠順序正規化寫入 metro_schedule_stops
+        for order_idx, station_id in enumerate(item["stops_in_order"]):
+            stops_rows.append((item["schedule_id"], station_id, order_idx + 1))
+    inserted = insert_many(cur, table, columns, rows)
+    print(f"  - Seeded {inserted} rows into {table}")
     if stops_rows:
         execute_values(cur,
             "INSERT INTO metro_schedule_stops (schedule_id, station_id, stop_order) VALUES %s ON CONFLICT DO NOTHING",
@@ -170,52 +163,40 @@ def seed_metro_schedules(cur):
 
 def seed_national_rail_schedules(cur):
     data = load("national_rail_schedules.json")
-    sched_rows = []
+    table = "national_rail_schedules"
+    # line / stops_in_order / passed_through_stations 不存在於 schema，已移除
+    # stops_in_order 改由 rail_schedule_stops junction table 儲存
+    columns = [
+        "schedule_id", "service_type", "direction",
+        "origin_station_id", "destination_station_id",
+        "first_train_time", "last_train_time",
+        "travel_time_from_origin_min", "fare_classes",
+        "frequency_min", "operates_on"
+    ]
+    # 加了"stops_in_order",
+    rows = []
     stops_rows = []
 
     for item in data:
-        cur.execute("SELECT station_id FROM national_rail_stations WHERE code = %s", (item["origin_station_id"],))
-        orig = cur.fetchone()
-        cur.execute("SELECT station_id FROM national_rail_stations WHERE code = %s", (item["destination_station_id"],))
-        dest = cur.fetchone()
-        if not orig or not dest:
-            print(f"    ⚠ station not found for schedule {item['schedule_id']}, skipping")
-            continue
-
-        sched_rows.append((
-            item["schedule_id"],                                # → code
+        row = (
+            item["schedule_id"],
             item["service_type"],
             item["direction"],
-            orig[0],
-            dest[0],
+            item["origin_station_id"],
+            item["destination_station_id"],
             item["first_train_time"],
             item["last_train_time"],
             json.dumps(item["travel_time_from_origin_min"]),
             json.dumps(item["fare_classes"]),
             item["frequency_min"],
-            item["operates_on"],
-        ))
-
-    inserted = insert_many(cur, "national_rail_schedules", [
-        "code", "service_type", "direction",
-        "origin_station_id", "destination_station_id",
-        "first_train_time", "last_train_time",
-        "travel_time_from_origin_min", "fare_classes",
-        "frequency_min", "operates_on",
-    ], sched_rows)
-    print(f"  - Seeded {inserted} rows into national_rail_schedules")
-
-    for item in data:
-        cur.execute("SELECT schedule_id FROM national_rail_schedules WHERE code = %s", (item["schedule_id"],))
-        sched = cur.fetchone()
-        if not sched:
-            continue
-        for order_idx, station_code in enumerate(item.get("stops_in_order", [])):
-            cur.execute("SELECT station_id FROM national_rail_stations WHERE code = %s", (station_code,))
-            st = cur.fetchone()
-            if st:
-                stops_rows.append((sched[0], st[0], order_idx + 1))
-
+            item["operates_on"]
+        )
+        rows.append(row)
+        # Table 4b — 停靠順序正規化寫入 rail_schedule_stops
+        for order_idx, station_id in enumerate(item["stops_in_order"]):
+            stops_rows.append((item["schedule_id"], station_id, order_idx + 1))
+    inserted = insert_many(cur, table, columns, rows)
+    print(f"  - Seeded {inserted} rows into {table}")
     if stops_rows:
         execute_values(cur,
             "INSERT INTO rail_schedule_stops (schedule_id, station_id, stop_order) VALUES %s ON CONFLICT DO NOTHING",

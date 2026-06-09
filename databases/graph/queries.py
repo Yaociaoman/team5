@@ -354,7 +354,7 @@ def query_interchange_path(origin_id: str, destination_id: str) -> dict:
         MATCH (origin:{origin_label} {{station_id: $origin_id}})
         MATCH (dest:{dest_label}     {{station_id: $dest_id}})
         MATCH path = shortestPath(
-            (origin)-[:METRO_LINK|RAIL_LINK|INTERCHANGE_TO*]->(dest)
+            (origin)-[:METRO_LINK|RAIL_LINK|INTERCHANGE_TO*]-(dest)
         )
         RETURN path,
                reduce(t = 0, r IN relationships(path) |
