@@ -108,11 +108,13 @@ def seed():
         MATCH (rs:Station:RailStation {station_id: m.interchange_national_rail_station_id})
         MERGE (ms)-[rel1:INTERCHANGE_TO]->(rs)
         SET rel1.travel_time_min = 5,
+            rel1.walk_time_min = 5,
             rel1.fare = 0.0,
             rel1.fare_standard = 0.0,
             rel1.fare_first = 0.0
         MERGE (rs)-[rel2:INTERCHANGE_TO]->(ms)
         SET rel2.travel_time_min = 5,
+            rel2.walk_time_min = 5,
             rel2.fare = 0.0,
             rel2.fare_standard = 0.0,
             rel2.fare_first = 0.0
@@ -126,11 +128,13 @@ def seed():
         MATCH (ms:Station:MetroStation {station_id: r.interchange_metro_station_id})
         MERGE (rs)-[rel1:INTERCHANGE_TO]->(ms)
         SET rel1.travel_time_min = 5,
+            rel1.walk_time_min = 5,
             rel1.fare = 0.0,
             rel1.fare_standard = 0.0,
             rel1.fare_first = 0.0
         MERGE (ms)-[rel2:INTERCHANGE_TO]->(rs)
         SET rel2.travel_time_min = 5,
+            rel2.walk_time_min = 5,
             rel2.fare = 0.0,
             rel2.fare_standard = 0.0,
             rel2.fare_first = 0.0
@@ -145,11 +149,13 @@ def seed():
         MATCH (ms:Station:MetroStation {station_id: r.interchange_metro_station_id})
         MERGE (rs)-[rel1:INTERCHANGE_TO]->(ms)
         SET rel1.travel_time_min = 5,
+            rel1.walk_time_min = 5,
             rel1.fare = 0.0,
             rel1.fare_standard = 0.0,
             rel1.fare_first = 0.0
         MERGE (ms)-[rel2:INTERCHANGE_TO]->(rs)
         SET rel2.travel_time_min = 5,
+            rel2.walk_time_min = 5,
             rel2.fare = 0.0,
             rel2.fare_standard = 0.0,
             rel2.fare_first = 0.0

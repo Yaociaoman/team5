@@ -219,7 +219,7 @@ def query_cheapest_route(
                     "from":     nodes[i]["station_id"],
                     "to":       nodes[i + 1]["station_id"],
                     "line":     r.get("line", ""),
-                    "fare_usd": r.get("fare_usd", 0),
+                    "fare_usd": float(r.get(fare_prop, 0.0)),
                 }
                 for i, r in enumerate(rels)
             ]
@@ -239,6 +239,7 @@ def query_alternative_routes(
     avoid_station_id: str,
     network: str = "auto",
     max_routes: int = 3,
+    fare_class: str = "standard",
 ) -> list[list[dict]]:
     """
     Find paths between two stations that avoid a specific intermediate station.
@@ -250,6 +251,7 @@ def query_alternative_routes(
         avoid_station_id:  e.g. "NR03"
         network:           "metro", "rail", or "auto"
         max_routes:        max number of alternatives to return
+        fare_class:        "standard" or "first" (national rail only)
 
     Returns:
         List of routes, each route is a list of leg dicts
@@ -267,18 +269,22 @@ def query_alternative_routes(
         label, rel_type = "MetroStation", "METRO_LINK"
     else:
         label, rel_type = "RailStation", "RAIL_LINK"
+        
+    fare_prop = "fare_standard" if fare_class == "standard" else "fare_first"
 
-    # 3. Build the Cypher query using allShortestPaths
+    # 3. Build the Cypher query using variable-length paths
     #    - NONE(...) clause filters out any path that passes through the avoided station
     #    - The avoided station is allowed to be the origin or destination (edge case guard)
+    #    - ORDER BY length(path) to return the shortest available alternative routes
     cypher = f"""
         MATCH (origin:{label} {{station_id: $origin_id}})
         MATCH (dest:{label}   {{station_id: $dest_id}})
-        MATCH path = allShortestPaths((origin)-[:{rel_type}*]->(dest))
+        MATCH path = (origin)-[:{rel_type}*1..15]->(dest)
         WHERE NONE(n IN nodes(path) WHERE n.station_id = $avoid_id
                    AND n.station_id <> $origin_id
                    AND n.station_id <> $dest_id)
         RETURN path
+        ORDER BY length(path)
         LIMIT $limit
     """
 
@@ -304,7 +310,7 @@ def query_alternative_routes(
                         "to":       nodes[i + 1]["station_id"],
                         "line":     r.get("line", ""),
                         "time_min": r.get("travel_time_min", 0),
-                        "fare_usd": r.get("fare_usd", 0),
+                        "fare_usd": float(r.get(fare_prop, 0.0)),
                     }
                     for i, r in enumerate(rels)
                 ]
@@ -381,10 +387,12 @@ def query_interchange_path(origin_id: str, destination_id: str) -> dict:
             interchange_points = []
             for i, r in enumerate(rels):
                 if r.type == "INTERCHANGE_TO":
+                    # Check both walk_time_min and travel_time_min as fallback
+                    walk_time = r.get("walk_time_min", r.get("travel_time_min", 5))
                     interchange_points.append({
                         "from_station":  nodes[i]["station_id"],
                         "to_station":    nodes[i + 1]["station_id"],
-                        "walk_time_min": r.get("walk_time_min", 5),
+                        "walk_time_min": walk_time,
                     })
 
             return {
@@ -468,7 +476,7 @@ def query_station_connections(station_id: str) -> list[dict]:
                neighbor.name       AS name,
                r.line              AS line,
                r.travel_time_min   AS travel_time_min,
-               r.fare_usd          AS fare_usd
+               r.fare_standard     AS fare_usd
         ORDER BY neighbor.station_id
     """
 
