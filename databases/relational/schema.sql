@@ -34,7 +34,7 @@
 -- ============================================================
 
 
--- ── LAYER 2: STATION VERTICES (車站主檔) ──────────────────────────────────────
+-- ── LAYER 2: STATION VERTICES  ──────────────────────────────────────
 
 -- ============================================================================
 -- PK DESIGN DECISION JUSTIFICATION (Task 1 Criterion Compliance)
@@ -60,7 +60,7 @@
 --    by updating the 'status' column to 'cancelled' in the bookings ledger rather than row hiding.
 -- ============================================================================
 
--- ── LAYER 1: BASE CONFIGURATION TABLES (完全獨立的主檔，先建) ──────────────────
+-- ── LAYER 1: BASE CONFIGURATION TABLES (Create completely independent master tables first) ──────────────────
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";  -- gen_random_uuid()
 
@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS national_rail_stations (
     adjacent_stations JSONB
 );
 
--- 解決 metro_stations 與 national_rail_stations 之間的循環外鍵的依賴
+-- Resolve the circular foreign key dependency between 'metro_stations' and 'national_rail_stations'
 ALTER TABLE metro_stations
     DROP CONSTRAINT IF EXISTS fk_metro_interchange_nr,
     ADD CONSTRAINT fk_metro_interchange_nr
