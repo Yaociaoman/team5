@@ -70,96 +70,90 @@ def seed():
         """, rail_stations=rail_stations)
         print("  Dynamically created National Rail Station nodes")
 
-        # 3. Dynamically Create Metro Links (Adjacent Station Connections)
+        # 3. Dynamically Create Metro Links (Adjacent Station Connections - Bidirectional Fix)
         session.run("""
         UNWIND $metro_stations AS m
         MATCH (src:Station:MetroStation {station_id: m.station_id})
         UNWIND m.adjacent_stations AS adj
         MATCH (dest:Station:MetroStation {station_id: adj.station_id})
-        MERGE (src)-[rel:METRO_LINK {line: adj.line}]->(dest)
-        SET rel.travel_time_min = adj.travel_time_min,
-            rel.fare = 0.30,
-            rel.fare_standard = 0.30,
-            rel.fare_first = 0.30
+        
+        MERGE (src)-[rel1:METRO_LINK {line: adj.line}]->(dest)
+        SET rel1.travel_time_min = adj.travel_time_min,
+            rel1.fare = 0.30,
+            rel1.fare_standard = 0.30,
+            rel1.fare_first = 0.30
+            
+        MERGE (dest)-[rel2:METRO_LINK {line: adj.line}]->(src)
+        SET rel2.travel_time_min = adj.travel_time_min,
+            rel2.fare = 0.30,
+            rel2.fare_standard = 0.30,
+            rel2.fare_first = 0.30
         """, metro_stations=metro_stations)
-        print("  Dynamically created Metro relationships")
+        print("  Dynamically created Metro bidirectional relationships")
 
-        # 4. Dynamically Create National Rail Links (Adjacent Station Connections)
+        # 4. Dynamically Create National Rail Links (Adjacent Station Connections - Bidirectional Fix)
         session.run("""
         UNWIND $rail_stations AS r
         MATCH (src:Station:RailStation {station_id: r.station_id})
         UNWIND r.adjacent_stations AS adj
         MATCH (dest:Station:RailStation {station_id: adj.station_id})
-        MERGE (src)-[rel:RAIL_LINK {line: adj.line}]->(dest)
-        SET rel.travel_time_min = adj.travel_time_min,
-            rel.fare_standard = 1.50,
-            rel.fare_first = 2.50
+        
+        MERGE (src)-[rel1:RAIL_LINK {line: adj.line}]->(dest)
+        SET rel1.travel_time_min = adj.travel_time_min,
+            rel1.fare_standard = 1.50,
+            rel1.fare_first = 2.50
+            
+        MERGE (dest)-[rel2:RAIL_LINK {line: adj.line}]->(src)
+        SET rel2.travel_time_min = adj.travel_time_min,
+            rel2.fare_standard = 1.50,
+            rel2.fare_first = 2.50
         """, rail_stations=rail_stations)
-        print("  Dynamically created National Rail relationships")
+        print("  Dynamically created National Rail bidirectional relationships")
 
         # 5. Dynamically Create Transfer Links between Metro and Rail
         # Strictly use INTERCHANGE_TO with travel_time_min to correspond to the algorithmic settings
-        # Transfer settings from Metro
+        
+        # 5a. Transfer settings FROM Metro TO Rail (Bidirectional)
         session.run("""
         UNWIND $metro_stations AS m
         WITH m WHERE m.is_interchange_national_rail = true AND m.interchange_national_rail_station_id IS NOT NULL
-        MATCH (ms:Station:MetroStation {station_id: m.station_id})
-        MATCH (rs:Station:RailStation {station_id: m.interchange_national_rail_station_id})
+        MATCH (ms:MetroStation {station_id: m.station_id})
+        MATCH (rs:RailStation {station_id: m.interchange_national_rail_station_id})
+        
         MERGE (ms)-[rel1:INTERCHANGE_TO]->(rs)
         SET rel1.travel_time_min = 5,
             rel1.walk_time_min = 5,
-            rel1.fare = 0.0,
             rel1.fare_standard = 0.0,
             rel1.fare_first = 0.0
+            
         MERGE (rs)-[rel2:INTERCHANGE_TO]->(ms)
         SET rel2.travel_time_min = 5,
             rel2.walk_time_min = 5,
-            rel2.fare = 0.0,
             rel2.fare_standard = 0.0,
             rel2.fare_first = 0.0
         """, metro_stations=metro_stations)
 
-        # Transfer settings from National Rail (ensure bidirectional correspondence)
+        # 5b. Transfer settings FROM Rail TO Metro (Bidirectional)
         session.run("""
         UNWIND $rail_stations AS r
         WITH r WHERE r.is_interchange_metro = true AND r.interchange_metro_station_id IS NOT NULL
-        MATCH (rs:Station:RailStation {station_id: r.station_id})
-        MATCH (ms:Station:MetroStation {station_id: r.interchange_metro_station_id})
+        MATCH (rs:RailStation {station_id: r.station_id})
+        MATCH (ms:MetroStation {station_id: r.interchange_metro_station_id})
+        
         MERGE (rs)-[rel1:INTERCHANGE_TO]->(ms)
         SET rel1.travel_time_min = 5,
             rel1.walk_time_min = 5,
-            rel1.fare = 0.0,
             rel1.fare_standard = 0.0,
             rel1.fare_first = 0.0
+            
         MERGE (ms)-[rel2:INTERCHANGE_TO]->(rs)
         SET rel2.travel_time_min = 5,
             rel2.walk_time_min = 5,
-            rel2.fare = 0.0,
             rel2.fare_standard = 0.0,
             rel2.fare_first = 0.0
         """, rail_stations=rail_stations)
-        print("  Dynamically created Transfer relationships (Walking transfers)")
-
-        # Transfer settings from National Rail (ensure bidirectional correspondence)
-        session.run("""
-        UNWIND $rail_stations AS r
-        WITH r WHERE r.is_interchange_metro = true AND r.interchange_metro_station_id IS NOT NULL
-        MATCH (rs:Station:RailStation {station_id: r.station_id})
-        MATCH (ms:Station:MetroStation {station_id: r.interchange_metro_station_id})
-        MERGE (rs)-[rel1:INTERCHANGE_TO]->(ms)
-        SET rel1.travel_time_min = 5,
-            rel1.walk_time_min = 5,
-            rel1.fare = 0.0,
-            rel1.fare_standard = 0.0,
-            rel1.fare_first = 0.0
-        MERGE (ms)-[rel2:INTERCHANGE_TO]->(rs)
-        SET rel2.travel_time_min = 5,
-            rel2.walk_time_min = 5,
-            rel2.fare = 0.0,
-            rel2.fare_standard = 0.0,
-            rel2.fare_first = 0.0
-        """, rail_stations=rail_stations)
-        print("  Dynamically created Transfer relationships (Walking transfers)")
+        
+        print("  Dynamically created Transfer relationships (Walking transfers) successfully.")
 
     driver.close()
     print("\nNeo4j graph seeded successfully.")
