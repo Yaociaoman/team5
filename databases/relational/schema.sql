@@ -62,6 +62,8 @@
 
 -- ── LAYER 1: BASE CONFIGURATION TABLES (完全獨立的主檔，先建) ──────────────────
 
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";  -- gen_random_uuid()
+
 -- 13. Ticket Types Setup
 CREATE TABLE IF NOT EXISTS ticket_types (
     ticket_type VARCHAR(20) PRIMARY KEY,
@@ -98,25 +100,27 @@ CREATE TABLE IF NOT EXISTS compensation_rules (
 
 -- 1. Metro Stations Master
 CREATE TABLE IF NOT EXISTS metro_stations (
-    station_id VARCHAR(50) PRIMARY KEY,
+    station_id SERIAL PRIMARY KEY,
+    code VARCHAR(20) UNIQUE NOT NULL, -- Unique station code provided by transit authority (e.g., 'MS01')
     name VARCHAR(100) NOT NULL,
     lines VARCHAR(20)[] NOT NULL,
     is_interchange_metro BOOLEAN DEFAULT FALSE,
     interchange_metro_lines VARCHAR(20)[],
     is_interchange_national_rail BOOLEAN DEFAULT FALSE,
-    interchange_national_rail_station_id VARCHAR(50),
+    interchange_national_rail_station_id VARCHAR(20), --Store station code for reference; actual FK constraint added after both tables are created to resolve circular dependency
     adjacent_stations JSONB NOT NULL
 );
 
 -- 2. National Rail Stations Master
 CREATE TABLE IF NOT EXISTS national_rail_stations (
-    station_id VARCHAR(50) PRIMARY KEY,
+    station_id SERIAL PRIMARY KEY,
+    code VARCHAR(20) UNIQUE NOT NULL, -- Unique station code provided by transit authority (e.g., 'NR01')
     name VARCHAR(100) NOT NULL,
     lines VARCHAR(20)[] NOT NULL,
     is_interchange_national_rail BOOLEAN DEFAULT FALSE,
     interchange_national_rail_lines VARCHAR(20)[],
     is_interchange_metro BOOLEAN DEFAULT FALSE,
-    interchange_metro_station_id VARCHAR(50) REFERENCES metro_stations(station_id) ON DELETE RESTRICT DEFERRABLE INITIALLY IMMEDIATE,
+    interchange_metro_station_id VARCHAR(20), --Store station code for reference; actual FK constraint added after both tables are created to resolve circular dependency
     adjacent_stations JSONB
 );
 
@@ -125,7 +129,14 @@ ALTER TABLE metro_stations
     DROP CONSTRAINT IF EXISTS fk_metro_interchange_nr,
     ADD CONSTRAINT fk_metro_interchange_nr
     FOREIGN KEY (interchange_national_rail_station_id)
-    REFERENCES national_rail_stations(station_id)
+    REFERENCES national_rail_stations(code)
+    ON DELETE RESTRICT DEFERRABLE INITIALLY IMMEDIATE;
+
+ALTER TABLE national_rail_stations
+    DROP CONSTRAINT IF EXISTS fk_nr_interchange_metro,
+    ADD CONSTRAINT fk_nr_interchange_metro
+    FOREIGN KEY (interchange_metro_station_id)
+    REFERENCES metro_stations(code)
     ON DELETE RESTRICT DEFERRABLE INITIALLY IMMEDIATE;
 
 
@@ -133,11 +144,12 @@ ALTER TABLE metro_stations
 
 -- 3. Metro Schedules
 CREATE TABLE IF NOT EXISTS metro_schedules (
-    schedule_id VARCHAR(50) PRIMARY KEY,
+    schedule_id SERIAL PRIMARY KEY,
+    code VARCHAR(50) UNIQUE NOT NULL, -- Unique schedule code (e.g., 'MS01_UP')
     line VARCHAR(20) NOT NULL,
     direction VARCHAR(20) NOT NULL,
-    origin_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
-    destination_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
+    origin_station_id INT NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
+    destination_station_id INT NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
     first_train_time TIME NOT NULL,
     last_train_time TIME NOT NULL,
     travel_time_from_origin_min JSONB NOT NULL,
@@ -149,8 +161,8 @@ CREATE TABLE IF NOT EXISTS metro_schedules (
 
 -- 3b. Metro Schedule Stops Junction - Normalization Fix
 CREATE TABLE IF NOT EXISTS metro_schedule_stops (
-    schedule_id VARCHAR(50) NOT NULL REFERENCES metro_schedules(schedule_id) ON DELETE CASCADE,
-    station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
+    schedule_id INT NOT NULL REFERENCES metro_schedules(schedule_id) ON DELETE CASCADE,
+    station_id INT NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
     stop_order INT NOT NULL,
     CONSTRAINT pk_metro_schedule_stops PRIMARY KEY (schedule_id, station_id),
     CONSTRAINT uq_metro_stop_sequence UNIQUE (schedule_id, stop_order)
@@ -158,11 +170,12 @@ CREATE TABLE IF NOT EXISTS metro_schedule_stops (
 
 -- 4. National Rail Schedules
 CREATE TABLE IF NOT EXISTS national_rail_schedules (
-    schedule_id VARCHAR(50) PRIMARY KEY,
+    schedule_id SERIAL PRIMARY KEY,
+    code VARCHAR(50) UNIQUE NOT NULL,
     service_type VARCHAR(20) NOT NULL,
     direction VARCHAR(20) NOT NULL,
-    origin_station_id VARCHAR(50) NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
-    destination_station_id VARCHAR(50) NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
+    origin_station_id INT NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
+    destination_station_id INT NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
     first_train_time TIME NOT NULL,
     last_train_time TIME NOT NULL,
     travel_time_from_origin_min JSONB NOT NULL,
@@ -173,8 +186,8 @@ CREATE TABLE IF NOT EXISTS national_rail_schedules (
 
 -- 4b. Rail Schedule Stops Junction - Normalization Fix
 CREATE TABLE IF NOT EXISTS rail_schedule_stops (
-    schedule_id VARCHAR(50) NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE CASCADE,
-    station_id VARCHAR(50) NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
+    schedule_id INT NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE CASCADE,
+    station_id INT NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
     stop_order INT NOT NULL,
     CONSTRAINT pk_rail_schedule_stops PRIMARY KEY (schedule_id, station_id),
     CONSTRAINT uq_rail_stop_sequence UNIQUE (schedule_id, stop_order)
@@ -182,8 +195,9 @@ CREATE TABLE IF NOT EXISTS rail_schedule_stops (
 
 -- 11. National Railway Seat Configuration Table
 CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
-    layout_id VARCHAR(50) PRIMARY KEY,
-    schedule_id VARCHAR(50) NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE CASCADE,
+    layout_id SERIAL PRIMARY KEY,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    schedule_id INT NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE CASCADE,
     coaches JSONB NOT NULL
 );
 
@@ -192,7 +206,8 @@ CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
 
 -- 5. Registered Users Profile
 CREATE TABLE IF NOT EXISTS registered_users (
-    user_id VARCHAR(50) PRIMARY KEY,
+    user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(20) UNIQUE NOT NULL, -- Unique user code (e.g., 'U12345') for human-readable references
     full_name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     phone VARCHAR(20),
@@ -205,7 +220,7 @@ CREATE TABLE IF NOT EXISTS registered_users (
 
 -- 5b. User Credentials Isolation Boundary
 CREATE TABLE IF NOT EXISTS user_credentials (
-    user_id VARCHAR(50) PRIMARY KEY REFERENCES registered_users(user_id) ON DELETE CASCADE,
+    user_id UUID PRIMARY KEY REFERENCES registered_users(user_id) ON DELETE CASCADE,
     password_hash VARCHAR(255) NOT NULL,
     salt VARCHAR(64) NOT NULL
 );
@@ -216,11 +231,12 @@ COMMENT ON TABLE user_credentials IS 'Isolates highly sensitive authentication c
 
 -- 6. Bookings Financial Ledger
 CREATE TABLE IF NOT EXISTS bookings (
-    booking_id VARCHAR(50) PRIMARY KEY,
-    user_id VARCHAR(50) NOT NULL REFERENCES registered_users(user_id) ON DELETE CASCADE,
-    schedule_id VARCHAR(50) NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE RESTRICT,
-    origin_station_id VARCHAR(50) NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
-    destination_station_id VARCHAR(50) NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
+    booking_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    booking_ref VARCHAR(20) UNIQUE NOT NULL,
+    user_id UUID NOT NULL REFERENCES registered_users(user_id) ON DELETE CASCADE,
+    schedule_id INT NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE RESTRICT,
+    origin_station_id INT NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
+    destination_station_id INT NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
     travel_date DATE NOT NULL, -- Note: DATE is intentionally used here instead of TIMESTAMPTZ as the specific day is required, while departure_time holds the time component.
     departure_time TIME NOT NULL,
     ticket_type VARCHAR(20) NOT NULL REFERENCES ticket_types(ticket_type) ON DELETE RESTRICT,
@@ -237,11 +253,12 @@ CREATE TABLE IF NOT EXISTS bookings (
 
 -- 12. Metro High-Volume Travel Ledger
 CREATE TABLE IF NOT EXISTS metro_travel_history (
-    trip_id VARCHAR(50) PRIMARY KEY,
-    user_id VARCHAR(50) NOT NULL REFERENCES registered_users(user_id) ON DELETE CASCADE,
-    schedule_id VARCHAR(50) NOT NULL REFERENCES metro_schedules(schedule_id) ON DELETE RESTRICT,
-    origin_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
-    destination_station_id VARCHAR(50) NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
+    trip_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    trip_ref VARCHAR(50) UNIQUE NOT NULL,
+    user_id UUID NOT NULL REFERENCES registered_users(user_id) ON DELETE CASCADE,
+    schedule_id INT NOT NULL REFERENCES metro_schedules(schedule_id) ON DELETE RESTRICT,
+    origin_station_id INT NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
+    destination_station_id INT NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
     travel_date DATE NOT NULL, -- Note: DATE is intentionally used here instead of TIMESTAMPTZ as the specific calendar day is required for metro travel.
     ticket_type VARCHAR(20) NOT NULL REFERENCES ticket_types(ticket_type) ON DELETE RESTRICT,
     day_pass_ref VARCHAR(50),
@@ -256,9 +273,10 @@ CREATE TABLE IF NOT EXISTS metro_travel_history (
 
 -- 7. Payments Gateways Ledger
 CREATE TABLE IF NOT EXISTS payments (
-    payment_id   VARCHAR(50)    PRIMARY KEY,
-    booking_id   VARCHAR(50)    REFERENCES bookings(booking_id) ON DELETE CASCADE,
-    trip_id      VARCHAR(50)    REFERENCES metro_travel_history(trip_id) ON DELETE CASCADE,
+    payment_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    payment_ref VARCHAR(20) UNIQUE NOT NULL,
+    booking_id   UUID    REFERENCES bookings(booking_id) ON DELETE CASCADE,
+    trip_id      UUID    REFERENCES metro_travel_history(trip_id) ON DELETE CASCADE,
     amount_usd   NUMERIC(10, 2) NOT NULL,
     method       VARCHAR(20)    NOT NULL,
     status       VARCHAR(20)    NOT NULL,
@@ -270,13 +288,13 @@ CREATE TABLE IF NOT EXISTS payments (
 
 -- 10. User Feedback Metrics
 CREATE TABLE IF NOT EXISTS feedback (
-    feedback_id  VARCHAR(50)  PRIMARY KEY,
-    booking_id   VARCHAR(50)  REFERENCES bookings(booking_id) ON DELETE CASCADE,
-    trip_id      VARCHAR(50)  REFERENCES metro_travel_history(trip_id) ON DELETE CASCADE,
-    user_id      VARCHAR(50)  NOT NULL REFERENCES registered_users(user_id) ON DELETE CASCADE,
-    rating       INT          CHECK (rating >= 1 AND rating <= 5),
+    feedback_id  UUID  PRIMARY KEY DEFAULT gen_random_uuid(),
+    booking_id   UUID  REFERENCES bookings(booking_id) ON DELETE CASCADE,
+    trip_id      UUID REFERENCES metro_travel_history(trip_id)    ON DELETE CASCADE,
+    user_id      UUID NOT NULL REFERENCES registered_users(user_id) ON DELETE CASCADE,
+    rating       INT CHECK (rating >= 1 AND rating <= 5),
     comment      TEXT,
-    submitted_at TIMESTAMPTZ  NOT NULL,
+    submitted_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT chk_feedback_single_source CHECK (
         (booking_id IS NOT NULL)::int + (trip_id IS NOT NULL)::int = 1
     )
