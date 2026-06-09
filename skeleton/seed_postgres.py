@@ -66,7 +66,7 @@ def seed_metro_stations(cur):
     data = load("metro_stations.json")
     rows = [
         (                                             # station_id SERIAL
-            s["station_id"],                                    # → code
+            s["station_id"],                                   
             s["name"],
             s.get("lines", []),
             s.get("is_interchange_metro", False),
@@ -90,7 +90,7 @@ def seed_national_rail_stations(cur):
     data = load("national_rail_stations.json")
     rows = [
         (                                          # station_id SERIAL
-            s["station_id"],                                    # → code
+            s["station_id"],                                   
             s["name"],
             s.get("lines", []),
             s.get("is_interchange_national_rail", False),
@@ -137,7 +137,7 @@ def seed_metro_schedules(cur):
             continue
 
         row = (
-            item["schedule_id"],                                # → 寫入 code 欄位 (e.g., 'MS_SCH01')
+            item["schedule_id"],                                
             item["line"],
             item["direction"],
             orig_id,                                            # 真實的 INT ID
