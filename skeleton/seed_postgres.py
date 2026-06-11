@@ -32,6 +32,9 @@ DATA_DIR    = os.path.join(PROJECT_DIR, "train-mock-data")
 sys.path.insert(0, PROJECT_DIR)
 from skeleton import config as cfg
 
+from argon2 import PasswordHasher as _PH
+_ph_seed = _PH()
+
 
 def load(filename):
     with open(os.path.join(DATA_DIR, filename), encoding="utf-8") as f:
@@ -319,14 +322,17 @@ def seed_users(cur):
         row = cur.fetchone()
         if not row:
             continue
+        raw_password = u.get("password", "changeme")
+        hashed = _ph_seed.hash(raw_password)
+
         cur.execute("""
             INSERT INTO user_credentials (user_id, password_hash, salt)
             VALUES (%s, %s, %s)
             ON CONFLICT DO NOTHING
         """, (
             row[0],
-            u.get("password", ""),                             
-            u.get("salt", "static_salt"),
+            hashed,
+            'argon2id',   # salt is already embedded in the hash; this field only records the algorithm name
         ))
         cred_count += 1
     print(f"  - Seeded {cred_count} rows into user_credentials")

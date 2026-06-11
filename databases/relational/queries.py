@@ -32,6 +32,11 @@ import psycopg2
 import psycopg2.extras
 
 from skeleton.config import PG_DSN, VECTOR_TOP_K, VECTOR_SIMILARITY_THRESHOLD
+#use agron2 as our password hash and salt
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+
+_ph = PasswordHasher()
 
 
 def _connect():
@@ -392,7 +397,14 @@ def execute_booking(
             ))
             booking_id = cur.fetchone()["booking_id"]
 
-            conn.commit()
+            payment_ref = "PY-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+            cur.execute("""
+                INSERT INTO payments
+                    (payment_ref, booking_id, trip_id, amount_usd, method, status, paid_at)
+                VALUES (%s, %s, NULL, %s, 'card', 'completed', %s)
+            """, (payment_ref, booking_id, amount_usd, datetime.now(timezone.utc)))
+
+            conn.commit()   # ← booking + payment
             return True, {
                 "booking_id":              str(booking_id),
                 "booking_ref":             booking_ref,
@@ -514,10 +526,11 @@ def register_user(
             """, (code, full_name, email, dob, secret_question, secret_answer))
             user_id = cur.fetchone()["user_id"]
 
+            hashed = _ph.hash(password)   # argon2id，salt automatically embedded in the hash string
             cur.execute("""
                 INSERT INTO user_credentials (user_id, password_hash, salt)
-                VALUES (%s, %s, 'static_salt')
-            """, (user_id, password))
+                VALUES (%s, %s, 'argon2id')
+            """, (user_id, hashed))
 
             conn.commit()
             return True, str(user_id)
@@ -529,20 +542,30 @@ def register_user(
 
 
 def login_user(email: str, password: str) -> Optional[dict]:
-    """Verify password hash credentials against isolated boundary rows."""
+    """Verify argon2id password hash against isolated credential boundary rows."""
     sql = """
-        SELECT u.user_id, u.code, u.full_name, u.email, u.phone, u.date_of_birth, u.is_active,
-            split_part(u.full_name, ' ', 1) AS first_name,
-            split_part(u.full_name, ' ', 2) AS surname
+        SELECT u.user_id, u.code, u.full_name, u.email, u.phone,
+               u.date_of_birth, u.is_active,
+               split_part(u.full_name, ' ', 1) AS first_name,
+               split_part(u.full_name, ' ', 2) AS surname,
+               c.password_hash
         FROM registered_users u
         JOIN user_credentials c ON c.user_id = u.user_id
-        WHERE u.email = %s AND c.password_hash = %s AND u.is_active = TRUE
+        WHERE u.email = %s AND u.is_active = TRUE
     """
     with _connect() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(sql, (email, password))
+            cur.execute(sql, (email,))
             row = cur.fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            try:
+                _ph.verify(row["password_hash"], password)  # argon2id check
+            except VerifyMismatchError:
+                return None
+            result = dict(row)
+            result.pop("password_hash")   # don't send hash back
+            return result
 
 
 def get_user_secret_question(email: str) -> Optional[str]:
@@ -566,7 +589,8 @@ def verify_secret_answer(email: str, answer: str) -> bool:
 
 
 def update_password(email: str, new_password: str) -> bool:
-    """Update active password cipher strings within target authorization boundaries."""
+    """Hash new password with argon2id before storing."""
+    hashed = _ph.hash(new_password)
     sql = """
         UPDATE user_credentials 
         SET password_hash = %s 
@@ -574,7 +598,7 @@ def update_password(email: str, new_password: str) -> bool:
     """
     with _connect() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (new_password, email))
+            cur.execute(sql, (hashed, email))
             return cur.rowcount > 0
 
 
