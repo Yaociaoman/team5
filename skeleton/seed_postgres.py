@@ -306,7 +306,7 @@ def seed_users(cur):
 
     print(f"  - Seeded {len(data)} rows into registered_users")
 
-    # user_credentials: Fetch the UUID first, then insert
+    # Insert credentials only after the generated user UUID is available.
     cred_count = 0
     for u in data:
         cur.execute("SELECT user_id FROM registered_users WHERE code = %s", (u["user_id"],))

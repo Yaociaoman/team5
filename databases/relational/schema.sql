@@ -160,6 +160,8 @@ CREATE TABLE IF NOT EXISTS metro_schedules (
 );
 
 -- 3b. Metro Schedule Stops Junction - Normalization Fix
+-- Normalized many-to-many relationship between metro schedules and stations.
+-- Preserves stop sequencing while eliminating repeated station arrays.
 CREATE TABLE IF NOT EXISTS metro_schedule_stops (
     schedule_id INT NOT NULL REFERENCES metro_schedules(schedule_id) ON DELETE CASCADE,
     station_id INT NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
@@ -185,6 +187,8 @@ CREATE TABLE IF NOT EXISTS national_rail_schedules (
 );
 
 -- 4b. Rail Schedule Stops Junction - Normalization Fix
+-- Junction table used to represent ordered station stops for each rail schedule.
+-- Improves query flexibility and supports timetable normalization.
 CREATE TABLE IF NOT EXISTS rail_schedule_stops (
     schedule_id INT NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE CASCADE,
     station_id INT NOT NULL REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
@@ -194,6 +198,8 @@ CREATE TABLE IF NOT EXISTS rail_schedule_stops (
 );
 
 -- 11. National Railway Seat Configuration Table
+-- Stores coach and seat configuration separately from timetable records.
+-- Allows future seat management without modifying schedule data.
 CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
     layout_id SERIAL PRIMARY KEY,
     code VARCHAR(50) UNIQUE NOT NULL,
@@ -230,6 +236,8 @@ COMMENT ON TABLE user_credentials IS 'Isolates highly sensitive authentication c
 -- ── LAYER 5: TRANSACTION LEDGERS (Highly Dependent on Forward Master Data) ─────────────
 
 -- 6. Bookings Financial Ledger
+-- Central booking ledger for all national rail ticket reservations.
+-- Captures passenger itinerary, seat allocation, fare, and booking status.
 CREATE TABLE IF NOT EXISTS bookings (
     booking_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     booking_ref VARCHAR(20) UNIQUE NOT NULL,
@@ -252,6 +260,8 @@ CREATE TABLE IF NOT EXISTS bookings (
 
 
 -- 12. Metro High-Volume Travel Ledger
+-- Historical record of completed metro journeys.
+-- Optimized for high-volume transit transactions and travel analytics.
 CREATE TABLE IF NOT EXISTS metro_travel_history (
     trip_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     trip_ref VARCHAR(50) UNIQUE NOT NULL,
@@ -281,6 +291,8 @@ CREATE TABLE IF NOT EXISTS payments (
     method       VARCHAR(20)    NOT NULL,
     status       VARCHAR(20)    NOT NULL,
     paid_at      TIMESTAMPTZ    NOT NULL,
+    -- A payment must belong to exactly one source:
+    -- either a rail booking or a metro journey, but never both.
     CONSTRAINT chk_payments_single_source CHECK (
         (booking_id IS NOT NULL)::int + (trip_id IS NOT NULL)::int = 1
     )
@@ -295,6 +307,8 @@ CREATE TABLE IF NOT EXISTS feedback (
     rating       INT CHECK (rating >= 1 AND rating <= 5),
     comment      TEXT,
     submitted_at TIMESTAMPTZ NOT NULL,
+    -- Feedback must be associated with one completed travel experience only.
+    -- Prevents ambiguous reviews linked to multiple transaction types.
     CONSTRAINT chk_feedback_single_source CHECK (
         (booking_id IS NOT NULL)::int + (trip_id IS NOT NULL)::int = 1
     )
@@ -307,6 +321,8 @@ CREATE TABLE IF NOT EXISTS feedback (
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
+-- Vectorized policy knowledge base used for semantic retrieval and RAG.
+-- Stores embeddings generated from transit policy documents.
 CREATE TABLE IF NOT EXISTS policy_documents (
     id          SERIAL       PRIMARY KEY,
     title       VARCHAR(200) NOT NULL,
