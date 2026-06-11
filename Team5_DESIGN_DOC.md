@@ -19,18 +19,7 @@
 
 ## Section 1 — Entity-Relationship Diagram · /25
 
-| Criterion | What earns full marks |
-|-----------|-----------------------|
-| All required entities represented in the diagram | Every entity needed to model the system is present in the diagram |
-| Relationships shown with correct cardinality (1:N, M:N, etc.) | Every major relationship has a cardinality label directly on the diagram line |
-| Attributes shown: at minimum PK, key FKs, and 2–3 representative data fields per entity | Each entity shows its PK, the FKs that link it to other entities, and at least two data attributes |
-| Diagram is readable and professionally drawn (dbdiagram.io, draw.io, Lucidchart, or equivalent) | Clean layout; text is legible; a tool-generated diagram rather than a hand sketch |
-| **Section 1 Total** | |
-
-**Cardinality scoring (8 marks):** All major relationships correctly labelled = 8 ·
-Most correct = 5–7 · Some missing or wrong = 2–4 · No cardinality shown = 0
-
-> **Tip:** Cardinality labels must appear **on the diagram lines**, not only in a legend or text paragraph. A diagram that shows entity boxes and lines without cardinality notation scores 0 for that criterion.
+> See team5-erd.pdf for the Entity-Relationship Diagram.
 
 ---
 
