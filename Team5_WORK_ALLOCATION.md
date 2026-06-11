@@ -35,11 +35,11 @@ or reassigned mid-project).
 
 | Section | Primary Author | Supporting Member(s) | Notes |
 |---------|--------------|---------------------|-------|
-| Section 1 — ER Diagram | | | |
-| Section 2 — Normalisation Justification | | | |
+| Section 1 — ER Diagram | 陳少畇 | | |
+| Section 2 — Normalisation Justification | 姚喬嫚 | | |
 | Section 3 — Graph Database Design Rationale | 陳佑瑄 | | |
 | Section 4 — Vector / RAG Design | 陳少畇 | | |
-| Section 5 — AI Tool Usage Evidence | | | |
+| Section 5 — AI Tool Usage Evidence | 陳少畇 | | |
 | Section 6 — Reflection & Trade-offs | | | |
 | Section 7 — Optional Extension *(if applicable)* | | | |
 
@@ -52,9 +52,9 @@ All members must sum to 100%.
 
 | Member | Estimated % | Brief justification |
 |--------|-----------|---------------------|
-| 陳少畇 | 33.3% | |
-| 陳佑瑄 | 33.3% | |
-| 姚喬嫚 | 33.3% | |
+| 陳少畇 | % | 負責最初的relational, graph兩個的queries的架構，後續也幫忙檢測schema內容及seed_postgres.py的內容，也有小小更動neo4j的變數|
+| 陳佑瑄 | % | |
+| 姚喬嫚 | % | |
 | **Total** | **100%** | |
 
 ---
@@ -66,6 +66,6 @@ If nothing changed, write "No changes."
 
 | Change | Original plan | Revised plan | Reason |
 |--------|--------------|-------------|--------|
-| | | | |
+| varchar to uuid and serial | | | |
 
 ---
