@@ -1,29 +1,3 @@
--- ============================================================
---  TransitFlow PostgreSQL Schema
---  Seed data is loaded separately by: python skeleton/seed_postgres.py
---
---  TWO ROLES:
---    1. Relational  → dual-network transit data you design below
---    2. Vector      → policy documents for RAG (provided — do not modify)
--- ============================================================
-
--- ============================================================
---  STUDENT TASK — Design and create your relational tables here
---
---  Start from the mock data in train-mock-data/:
---    metro_stations.json, national_rail_stations.json
---    metro_schedules.json, national_rail_schedules.json
---    national_rail_seat_layouts.json
---    registered_users.json
---    bookings.json, metro_travel_history.json
---    payments.json, feedback.json
---
---  Think about:
---    - What tables do you need?
---    - What columns and data types?
---    - Which fields are primary keys? Which are foreign keys?
---    - What constraints make sense?
---
 --  Apply your schema with:
 --    docker-compose down -v && docker-compose up -d
 -- ============================================================
@@ -38,26 +12,29 @@
 
 -- ============================================================================
 -- PK DESIGN DECISION JUSTIFICATION (Task 1 Criterion Compliance)
--- We explicitly evaluated SERIAL vs UUID vs VARCHAR for our Primary Keys:
--- 1. For Master Catalogs (e.g., stations, ticket_types): We rejected SERIAL and UUID 
---    because the transit authority provides standard natural alphanumeric codes (e.g. 'MS01', 'NS01'). 
---    Using VARCHAR(50) prevents unnecessary columns and enforces domain-level unique constraints.
--- 2. For Operational Ledgers (e.g., bookings, payments): VARCHAR(50) was chosen over 
---    standard UUID to align with the pre-formatted alphanumeric booking references from mock datasets, 
---    facilitating human-readable tickets and high-performance indexing without UUID storage overhead.
+-- 1. SERIAL: Static reference tables (stations, schedules, seat_layouts) use SERIAL
+--    for sequential integer PKs — minimises storage, optimises JOIN and index clustering.
+-- 2. UUID: Sensitive transactional tables (registered_users, bookings, payments,
+--    metro_travel_history) use UUID to prevent ID enumeration attacks, mask business
+--    volume, and guarantee global uniqueness. Generated via pgcrypto's gen_random_uuid().
+-- 3. VARCHAR natural keys: Master catalog tables (ticket_types, booking_rules,
+--    refund_policies, compensation_rules) use domain-defined string codes as PKs
+--    (e.g. 'single', 'RF001') because the transit authority provides these codes
+--    as canonical identifiers — a surrogate key would be redundant.
 -- ============================================================================
 
 -- ============================================================================
 -- DELETE STRATEGY SPECIFICATION (Task 1 Criterion Compliance)
--- This system consistently implements a robust database deletion strategy:
--- 1. HARD DELETE WITH CASCADE: Applied to operational/dependent child tables 
---    (e.g., payments, user_credentials, schedule_stops) via 'ON DELETE CASCADE'
---    to prevent orphaned rows and maintain referential cleanups automatically.
--- 2. HARD DELETE WITH RESTRICT: Applied to transactional links pointing to master catalogs 
---    (e.g., stations inside schedules, ticket_types inside bookings) via 'ON DELETE RESTRICT' 
---    to prevent accidental deletion of core infrastructure components while data exists.
--- 3. STATUS-BASED RETENTION: Active order cancellations are managed via business logic 
---    by updating the 'status' column to 'cancelled' in the bookings ledger rather than row hiding.
+-- This schema applies HARD DELETE as the primary strategy with a two-tier approach:
+-- 1. HARD DELETE WITH CASCADE: Child/operational tables (payments, user_credentials,
+--    schedule_stops, metro_travel_history, bookings, feedback) use ON DELETE CASCADE
+--    to automatically remove dependent rows and prevent orphaned records.
+-- 2. HARD DELETE WITH RESTRICT: FK references pointing to master catalogs
+--    (stations, ticket_types, schedules) use ON DELETE RESTRICT to guard core
+--    infrastructure from deletion while live transactional data exists.
+-- 3. STATUS-BASED SOFT RETENTION (bookings only): Cancellations update the
+--    'status' column to 'cancelled' rather than deleting rows, preserving
+--    financial audit trails for refund calculation (see execute_cancellation()).
 -- ============================================================================
 
 -- ── LAYER 1: BASE CONFIGURATION TABLES (Create completely independent master tables first) ──────────────────
@@ -100,7 +77,7 @@ CREATE TABLE IF NOT EXISTS compensation_rules (
 
 -- 1. Metro Stations Master
 CREATE TABLE IF NOT EXISTS metro_stations (
-    station_id SERIAL PRIMARY KEY,
+    station_id SERIAL PRIMARY KEY, -- PK: SERIAL; static reference table, sequential INT minimises storage and optimises FK JOIN performance.
     code VARCHAR(20) UNIQUE NOT NULL, -- Unique station code provided by transit authority (e.g., 'MS01')
     name VARCHAR(100) NOT NULL,
     lines VARCHAR(20)[] NOT NULL,
@@ -113,7 +90,7 @@ CREATE TABLE IF NOT EXISTS metro_stations (
 
 -- 2. National Rail Stations Master
 CREATE TABLE IF NOT EXISTS national_rail_stations (
-    station_id SERIAL PRIMARY KEY,
+    station_id SERIAL PRIMARY KEY, -- PK: SERIAL; static reference table, same rationale as metro_stations.
     code VARCHAR(20) UNIQUE NOT NULL, -- Unique station code provided by transit authority (e.g., 'NR01')
     name VARCHAR(100) NOT NULL,
     lines VARCHAR(20)[] NOT NULL,
@@ -144,7 +121,7 @@ ALTER TABLE national_rail_stations
 
 -- 3. Metro Schedules
 CREATE TABLE IF NOT EXISTS metro_schedules (
-    schedule_id SERIAL PRIMARY KEY,
+    schedule_id SERIAL PRIMARY KEY, -- PK: SERIAL; timetable master data is static and never distributed across systems.
     code VARCHAR(50) UNIQUE NOT NULL, -- Unique schedule code (e.g., 'MS01_UP')
     line VARCHAR(20) NOT NULL,
     direction VARCHAR(20) NOT NULL,
@@ -172,7 +149,7 @@ CREATE TABLE IF NOT EXISTS metro_schedule_stops (
 
 -- 4. National Rail Schedules
 CREATE TABLE IF NOT EXISTS national_rail_schedules (
-    schedule_id SERIAL PRIMARY KEY,
+    schedule_id SERIAL PRIMARY KEY, -- PK: SERIAL; static timetable catalog, referenced heavily by bookings via FK.
     code VARCHAR(50) UNIQUE NOT NULL,
     service_type VARCHAR(20) NOT NULL,
     direction VARCHAR(20) NOT NULL,
@@ -201,7 +178,7 @@ CREATE TABLE IF NOT EXISTS rail_schedule_stops (
 -- Stores coach and seat configuration separately from timetable records.
 -- Allows future seat management without modifying schedule data.
 CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
-    layout_id SERIAL PRIMARY KEY,
+    layout_id SERIAL PRIMARY KEY, -- PK: SERIAL; seat configuration is static per schedule; no enumeration risk.
     code VARCHAR(50) UNIQUE NOT NULL,
     schedule_id INT NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE CASCADE,
     coaches JSONB NOT NULL
