@@ -53,6 +53,10 @@ def insert_many(cur, table, columns, rows):
         return 0
     fields = ", ".join(columns)
     val_template = "(" + ", ".join(["%s"] * len(columns)) + ")"
+
+    # IDEMPOTENCY DESIGN: Utilizing 'ON CONFLICT DO NOTHING' to guarantee this seeding script is idempotent.
+    # It can be safely re-run without risking duplicate primary keys or mutating existing rows.
+    
     sql = (
         f"INSERT INTO {table} ({', '.join(columns)}) VALUES %s ON CONFLICT DO NOTHING"
     )
@@ -306,6 +310,8 @@ def seed_users(cur):
 
     print(f"  - Seeded {len(data)} rows into registered_users")
 
+    # SECURITY DECISION: Passwords from registered_users.json are securely hashed using Argon2id (via argon2-cffi) to ensure salted, non-reversible storage.
+    # The hash is separated into the 'user_credentials' table to isolate highly sensitive data from general user profiles.
     # user_credentials: Fetch the UUID first, then insert
     cred_count = 0
     for u in data:
