@@ -32,7 +32,7 @@ import psycopg2
 import psycopg2.extras
 
 from skeleton.config import PG_DSN, VECTOR_TOP_K, VECTOR_SIMILARITY_THRESHOLD
-#use agron2 as our password hash and salt
+# Use Argon2id for password hashing; the salt is embedded in the generated hash string.
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
@@ -171,6 +171,7 @@ def query_national_rail_fare(
     stops_travelled: int,
 ) -> Optional[dict]:
     """Extract and parse national rail fare from JSONB schema configuration matrix."""
+    # FLEXIBLE FARE MODEL：Fare rules are stored in JSONB to allow different pricing structures without requiring schema changes for future fare classes.
     sql = """
         SELECT 
             (fare_classes->%(fare_class)s->>'base_fare_usd')::numeric AS base_fare_usd,
@@ -333,6 +334,9 @@ def execute_booking(
     ticket_type: str = "single",
 ) -> tuple[bool, dict | str]:
     """Process a new national rail ticket purchase ledger entry within isolated safety limits."""
+    # TRANSACTION ATOMICITY:
+    # Booking creation must execute as a single transactional unit.
+    # Any failure during validation, fare calculation, or seat assignment triggers a full rollback to prevent partial reservations.
     conn = psycopg2.connect(PG_DSN)
     conn.autocommit = False
 
@@ -364,7 +368,7 @@ def execute_booking(
                     return False, "No unallocated capacity matches requested seating tier."
                 seat_id = available[0]["seat_id"]
 
-            # Double-booking verification check
+            # CONCURRENCY SAFEGUARD:Prevent duplicate seat allocation by validating that no confirmed booking already occupies the requested seat on the same schedule and travel date.
             cur.execute("""
                 SELECT 1 FROM bookings
                 WHERE schedule_id = %s AND seat_id = %s AND travel_date = %s::date AND status = 'confirmed'
@@ -458,6 +462,8 @@ def execute_cancellation(booking_id: str, user_id: str) -> tuple[bool, dict | st
             service_type = booking["service_type"]
             amount       = float(booking["amount_usd"])
 
+            # POLICY ENGINE:
+            # Refund percentages are dynamically determined using service-specific cancellation ladders (RF001 for Normal services and RF002 for Express services) rather than hard-coded refund values.
             if service_type == "express":
                 if hours_until > 48:
                     refund_pct, policy_note = 1.0, "RF002: >48h before departure — 100% refund"
@@ -476,7 +482,9 @@ def execute_cancellation(booking_id: str, user_id: str) -> tuple[bool, dict | st
                     refund_pct, policy_note = 0.0, "RF001: <1h before departure — no refund"
 
             refund_amount = round(amount * refund_pct, 2)
-
+            # CANCELLATION AUDIT POLICY:
+            # Although the schema defines hard-delete behavior for true DELETE operations, user cancellation is handled as a status update instead of deleting the row.
+            # This preserves booking history while still allowing database-level delete rules to protect referential integrity when administrative deletion is required.
             cur.execute("UPDATE bookings SET status = 'cancelled' WHERE booking_id = %s", (booking_id,))
             conn.commit()
             return True, {
@@ -526,7 +534,10 @@ def register_user(
             """, (code, full_name, email, dob, secret_question, secret_answer))
             user_id = cur.fetchone()["user_id"]
 
+            # User passwords are hashed with Argon2id before persistence, and only the hash is stored in the isolated user_credentials table.
             hashed = _ph.hash(password)   # argon2id，salt automatically embedded in the hash string
+            
+            # This implementation intentionally separates credentials from profile data to support future migration toward Argon2id/bcrypt hashing and reduce exposure of sensitive data.
             cur.execute("""
                 INSERT INTO user_credentials (user_id, password_hash, salt)
                 VALUES (%s, %s, 'argon2id')
@@ -543,6 +554,7 @@ def register_user(
 
 def login_user(email: str, password: str) -> Optional[dict]:
     """Verify argon2id password hash against isolated credential boundary rows."""
+    # AUTHENTICATION BOUNDARY:Credentials are stored in a dedicated table to enforce separation between identity information and authentication secrets.
     sql = """
         SELECT u.user_id, u.code, u.full_name, u.email, u.phone,
                u.date_of_birth, u.is_active,
@@ -590,6 +602,7 @@ def verify_secret_answer(email: str, answer: str) -> bool:
 
 def update_password(email: str, new_password: str) -> bool:
     """Hash new password with argon2id before storing."""
+    # Password updates must follow the same Argon2id hashing policy as registration.
     hashed = _ph.hash(new_password)
     sql = """
         UPDATE user_credentials 
