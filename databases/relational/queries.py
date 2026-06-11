@@ -531,7 +531,9 @@ def register_user(
 def login_user(email: str, password: str) -> Optional[dict]:
     """Verify password hash credentials against isolated boundary rows."""
     sql = """
-        SELECT u.user_id, u.code, u.full_name, u.email, u.phone, u.date_of_birth, u.is_active
+        SELECT u.user_id, u.code, u.full_name, u.email, u.phone, u.date_of_birth, u.is_active,
+            split_part(u.full_name, ' ', 1) AS first_name,
+            split_part(u.full_name, ' ', 2) AS surname
         FROM registered_users u
         JOIN user_credentials c ON c.user_id = u.user_id
         WHERE u.email = %s AND c.password_hash = %s AND u.is_active = TRUE

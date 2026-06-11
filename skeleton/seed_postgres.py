@@ -65,14 +65,14 @@ def insert_many(cur, table, columns, rows):
 def seed_metro_stations(cur):
     data = load("metro_stations.json")
     rows = [
-        (                                             # station_id SERIAL
-            s["station_id"],                                    # → code
+        (                                             
+            s["station_id"],                                   
             s["name"],
             s.get("lines", []),
             s.get("is_interchange_metro", False),
             s.get("interchange_metro_lines", []),
             s.get("is_interchange_national_rail", False),
-            s.get("interchange_national_rail_station_id"),      # → interchange_national_rail_station_id
+            s.get("interchange_national_rail_station_id"),      
             json.dumps(s.get("adjacent_stations", [])),
         )
         for s in data
@@ -89,14 +89,14 @@ def seed_metro_stations(cur):
 def seed_national_rail_stations(cur):
     data = load("national_rail_stations.json")
     rows = [
-        (                                          # station_id SERIAL
-            s["station_id"],                                    # → code
+        (                                         
+            s["station_id"],                                   
             s["name"],
             s.get("lines", []),
             s.get("is_interchange_national_rail", False),
             s.get("interchange_national_rail_lines", []),
             s.get("is_interchange_metro", False),
-            s.get("interchange_metro_station_id"),              # → interchange_metro_station_id
+            s.get("interchange_metro_station_id"),              
             json.dumps(s.get("adjacent_stations", [])),
         )
         for s in data
@@ -114,11 +114,11 @@ def seed_metro_schedules(cur):
     data = load("metro_schedules.json")
     table = "metro_schedules"
     
-    # 建立捷運車站 Code 到真實 INT ID 的快速對照表
+    # Build a fast lookup table mapping metro station Code to the actual INT ID
     cur.execute("SELECT code, station_id FROM metro_stations;")
     station_map = {row[0]: row[1] for row in cur.fetchall()}
     
-    # 將欄位名稱對照到 schema 的文字 code 欄位，把自增的主鍵保留給資料庫算
+    # Map column names to the string code fields in the schema, let the database generate the auto-increment primary key
     columns = [
         "code", "line", "direction", "origin_station_id",
         "destination_station_id", "first_train_time",
@@ -137,11 +137,11 @@ def seed_metro_schedules(cur):
             continue
 
         row = (
-            item["schedule_id"],                                # → 寫入 code 欄位 (e.g., 'MS_SCH01')
+            item["schedule_id"],                                
             item["line"],
             item["direction"],
-            orig_id,                                            # 真實的 INT ID
-            dest_id,                                            # 真實的 INT ID
+            orig_id,                                          
+            dest_id,                                          
             item["first_train_time"],
             item["last_train_time"],
             json.dumps(item["travel_time_from_origin_min"]),
@@ -152,21 +152,21 @@ def seed_metro_schedules(cur):
         )
         rows.append(row)
         
-        # 暫存停靠站代碼，稍後轉換
+        # Temporarily store stop codes for later conversion
         schedule_stops_data.append({
             "schedule_code": item["schedule_id"],
             "stops": item["stops_in_order"]
         })
 
-    # 1. 批次寫入 metro_schedules 主表
+    # 1. Bulk insert into the metro_schedules main table
     inserted = insert_many(cur, table, columns, rows)
     print(f"  - Seeded {inserted} rows into {table}")
     
-    # 2. 查出剛才主表寫入後，資料庫自動生成的自增主鍵 schedule_id
+    # 2. Retrieve the auto-generated auto-increment PK (schedule_id) from the main table
     cur.execute("SELECT code, schedule_id FROM metro_schedules;")
     sched_map = {row[0]: row[1] for row in cur.fetchall()}
     
-    # 3. 整合並批次寫入 Junction Table (metro_schedule_stops)
+    # 3. Consolidate and bulk insert into the junction table (metro_schedule_stops)
     stops_rows = []
     for s_data in schedule_stops_data:
         db_sched_id = sched_map.get(s_data["schedule_code"])
@@ -188,11 +188,11 @@ def seed_national_rail_schedules(cur):
     data = load("national_rail_schedules.json")
     table = "national_rail_schedules"
     
-    # 建立國鐵車站 Code 到真實 INT ID 的快速對照表
+    # Create a quick lookup table mapping National Rail station codes to actual INT IDs
     cur.execute("SELECT code, station_id FROM national_rail_stations;")
     station_map = {row[0]: row[1] for row in cur.fetchall()}
     
-    # 將欄位名稱第一個元素修正為 code
+    # Fix the first element of the column names to 'code'
     columns = [
         "code", "service_type", "direction",
         "origin_station_id", "destination_station_id",
@@ -212,11 +212,11 @@ def seed_national_rail_schedules(cur):
             continue
 
         row = (
-            item["schedule_id"],                                # → 寫入 code 欄位 (e.g., 'NR_SCH01')
+            item["schedule_id"],                               
             item["service_type"],
             item["direction"],
-            orig_id,                                            # 真實的 INT ID
-            dest_id,                                            # 真實的 INT ID
+            orig_id,                                            
+            dest_id,                                           
             item["first_train_time"],
             item["last_train_time"],
             json.dumps(item["travel_time_from_origin_min"]),
@@ -226,21 +226,21 @@ def seed_national_rail_schedules(cur):
         )
         rows.append(row)
         
-        # 暫存停靠站代碼，稍後轉換
+        # Temporarily store stop codes for later conversion
         schedule_stops_data.append({
             "schedule_code": item["schedule_id"],
             "stops": item["stops_in_order"]
         })
 
-    # 1. 批次寫入 national_rail_schedules 主表
+    # 1. Bulk insert into the national_rail_schedules main table
     inserted = insert_many(cur, table, columns, rows)
     print(f"  - Seeded {inserted} rows into {table}")
     
-    # 2. 查出剛才主表寫入後，資料庫自動生成的自增主鍵 schedule_id
+    # 2. Retrieve the auto-generated auto-increment PK (schedule_id) from the main table
     cur.execute("SELECT code, schedule_id FROM national_rail_schedules;")
     sched_map = {row[0]: row[1] for row in cur.fetchall()}
     
-    # 3. 整合並批次寫入 Junction Table (rail_schedule_stops)
+    # 3. Consolidate and bulk insert into the junction table (rail_schedule_stops)
     stops_rows = []
     for s_data in schedule_stops_data:
         db_sched_id = sched_map.get(s_data["schedule_code"])
@@ -262,7 +262,7 @@ def seed_seat_layouts(cur):
     data = load("national_rail_seat_layouts.json")
 
     for layout in data:
-        # 查 schedule_id INT by code
+        # Lookup schedule_id (INT) by code
         cur.execute("SELECT schedule_id FROM national_rail_schedules WHERE code = %s", (layout["schedule_id"],))
         sched = cur.fetchone()
         if not sched:
@@ -274,7 +274,7 @@ def seed_seat_layouts(cur):
             VALUES (%s, %s, %s)
             ON CONFLICT (code) DO NOTHING
         """, (
-            layout["schedule_id"],                              # → code
+            layout["schedule_id"],                             
             sched[0],
             json.dumps(layout["coaches"]),
         ))
@@ -294,7 +294,7 @@ def seed_users(cur):
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (code) DO NOTHING
         """, (
-            u["user_id"],                                       # → code
+            u["user_id"],                                       
             full_name,
             u["email"],
             u.get("phone"),
@@ -306,7 +306,7 @@ def seed_users(cur):
 
     print(f"  - Seeded {len(data)} rows into registered_users")
 
-    # user_credentials: 查回 UUID 再 insert
+    # user_credentials: Fetch the UUID first, then insert
     cred_count = 0
     for u in data:
         cur.execute("SELECT user_id FROM registered_users WHERE code = %s", (u["user_id"],))
@@ -319,7 +319,7 @@ def seed_users(cur):
             ON CONFLICT DO NOTHING
         """, (
             row[0],
-            u.get("password", ""),                             # 教學用，存明文當 hash
+            u.get("password", ""),                             
             u.get("salt", "static_salt"),
         ))
         cred_count += 1
@@ -331,21 +331,21 @@ def seed_national_rail_bookings(cur):
     count = 0
 
     for b in data:
-        # 查 user UUID
+        # lookup user UUID
         cur.execute("SELECT user_id FROM registered_users WHERE code = %s", (b["user_id"],))
         user_row = cur.fetchone()
         if not user_row:
             print(f"    ⚠ user {b['user_id']} not found, skipping {b['booking_id']}")
             continue
 
-        # 查 schedule INT
+        # lookup schedule INT
         cur.execute("SELECT schedule_id FROM national_rail_schedules WHERE code = %s", (b["schedule_id"],))
         sched_row = cur.fetchone()
         if not sched_row:
             print(f"    ⚠ schedule {b['schedule_id']} not found, skipping {b['booking_id']}")
             continue
 
-        # 查 station INT
+        # lookup station INT
         cur.execute("SELECT station_id FROM national_rail_stations WHERE code = %s", (b["origin_station_id"],))
         orig_row = cur.fetchone()
         cur.execute("SELECT station_id FROM national_rail_stations WHERE code = %s", (b["destination_station_id"],))
@@ -364,7 +364,7 @@ def seed_national_rail_bookings(cur):
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (booking_ref) DO NOTHING
         """, (
-            b["booking_id"],                                    # → booking_ref
+            b["booking_id"],                                   
             user_row[0],
             sched_row[0],
             orig_row[0],
@@ -417,7 +417,7 @@ def seed_metro_travels(cur):
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (trip_ref) DO NOTHING
         """, (
-            t["trip_id"],                                       # → trip_ref
+            t["trip_id"],                                   
             user_row[0],
             sched_row[0],
             orig_row[0],
@@ -426,7 +426,7 @@ def seed_metro_travels(cur):
             t.get("ticket_type", "single"),
             t.get("day_pass_ref"),
             t.get("stops_travelled"),
-            t.get("fare_usd") or t.get("amount_usd"),          # mock data 欄位名可能不同
+            t.get("fare_usd") or t.get("amount_usd"),      
             t.get("status", "completed"),
             t.get("purchased_at"),
             t.get("travelled_at"),
