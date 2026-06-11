@@ -1,91 +1,401 @@
-# IM2002 資料庫管理期末專案 - AI 協作規範指南 (code_regulation.md)
+# TransitFlow — Code Guidelines & Team Standards
 
-> 💡 **專案隊友們請注意：**
-> 為了避免大家用 AI 寫出來的後端、前端、資料庫模組「合體時爆炸」，請在找網頁版 AI（Claude / ChatGPT / Gemini）寫 Code 或改 Bug 之前，**先將下方「---」之後的所有內容完整複製貼給 AI**，然後再講你的具體任務。
-
----
-
-# IM2002 Database Management - AI Coding Standards
-
-請扮演高階資料庫架構師與資深後端工程師。我們正在進行 **IM2002 資料庫管理（Database Management）** 的期末專案（Train-final）。為了確保團隊多人協作的模組、API 與資料庫系統能完美對接且成功運行，你生成的每一行程式碼都必須**嚴格遵守**以下規範。
-
-## 1. 資料庫與 SQL 規範 (Database & SQL Standards)
-
-這是整個專案的核心，前後端與資料庫的命名必須絕對一致：
-
-*   **實體與欄位命名：** 資料表（Tables）與欄位（Columns）一律使用 **全小寫底線 (snake_case)**。
-    *   *正確：* `train_schedules`, `user_id`, `seat_number`, `departure_time`
-    *   *錯誤：* `TrainSchedules`, `userId`, `seatNumber`
-*   **鍵值命名規則 (Keys)：**
-    *   **主鍵 (PK)：** 統一命名為 `id`（若有複合主鍵則依業務邏輯命名）。
-    *   **外鍵 (FK)：** 統一命名為 `關聯表名單數_id`（例如：`user_id`, `schedule_id`）。
-*   **SQL 關鍵字大小寫：** 撰寫原生 SQL 語句或預存程序（Stored Procedure）時，**SQL 關鍵字必須全大寫**，表名與欄位名全小寫。
-    *   *正確：* `SELECT id, train_no FROM train_schedules WHERE status = 'ON_TIME';`
-*   **防止 SQL 注入：** 涉及任何資料庫查詢時，**嚴格禁止**字串拼接，必須使用**參數化查詢 (Parameterized Queries)** 或 **預備陳述式 (Prepared Statements)**。
+This document defines the coding conventions, commenting standards, and team workflow rules
+for the TransitFlow project. All team members are expected to follow these guidelines before
+committing any code.
 
 ---
 
-## 2. 程式碼命名與風格 (Coding Style)
+## Table of Contents
 
-請根據我們專案實際使用的語言，套用以下命名維度（不相關的語言請自動忽略）：
-
-*   **後端 (如 Python / Flask / Django)：**
-    *   **類別 (Classes)：** 大駝峰 `PascalCase`（如 `BookingManager`）
-    *   **變數、函式、方法與檔名：** 蛇形 `snake_case`（如 `get_available_seats()`, `db_helper.py`）
-*   **後端 (如 Java / Spring Boot)：**
-    *   **類別 (Classes)：** 大駝峰 `PascalCase`（如 `TrainController`）
-    *   **變數與函式：** 小駝峰 `camelCase`（如 `trainId`, `checkBookingStatus()`）
-*   **前端 (JavaScript / TypeScript / React / Vue)：**
-    *   **元件與類別：** 大駝峰 `PascalCase`（如 `TicketCustomizer.tsx`）
-    *   **一般變數、函式、API 請求物件：** 小駝峰 `camelCase`（如 `bookingData`, `handleCheckout()`）
-*   **全域常量 (Constants)：** 不分語言，一律使用 **全大寫底線 (UPPER_SNAKE_CASE)**（如 `MAX_SEATS_PER_ORDER`, `DB_TIMEOUT`）。
+1. [File Ownership](#1-file-ownership)
+2. [Git Workflow](#2-git-workflow)
+3. [SQL / Schema Conventions](#3-sql--schema-conventions)
+4. [Python Conventions](#4-python-conventions)
+5. [Cypher / Neo4j Conventions](#5-cypher--neo4j-conventions)
+6. [Comment Standards](#6-comment-standards)
+7. [Database Reset Protocol](#7-database-reset-protocol)
 
 ---
 
-## 3. 前後端資料對接與 API 規範 (API & Data Exchange)
+## 1. File Ownership
 
-為了讓前端發出的 Request 與後端的回應能夠對齊，AI 必須遵循：
+Each file has a primary owner responsible for its correctness. Changes to another member's
+file must be discussed first and reviewed before merging.
 
-*   **JSON 欄位格式：** API 傳輸的 JSON Data，其 Key 統一使用 **小駝峰 (camelCase)**。後端收到的資料需自行對接或轉換為資料庫的 `snake_case`。
-    *   *前端發送/後端回傳範例：* `{"userId": 123, "trainNo": "TAROKO-408", "bookingDate": "2026-05-22"}`
-*   **統一 API 回應格式：** 所有後端 API 的回傳不論成功或失敗，結構必須一致：
+| File | Owner | Purpose |
+|------|-------|---------|
+| `databases/relational/schema.sql` | Schema lead | Table definitions, constraints, indexes |
+| `databases/relational/queries.py` | Query lead | All PostgreSQL query and write functions |
+| `skeleton/seed_postgres.py` | Seed lead | PostgreSQL data seeding |
+| `databases/graph/seed.cypher` | Graph lead | Neo4j node and relationship definitions |
+| `databases/graph/queries.py` | Graph lead | All Cypher query functions |
+| `skeleton/seed_neo4j.py` | Graph lead | Neo4j seeding script |
+| `train-mock-data/*.json` | Data lead | Source mock data files |
 
-    ```json
-    {
-      "success": true, // 或 false
-      "message": "操作成功說明或錯誤訊息",
-      "data": {} // 成功的資料物件/陣列；失敗時為 null
-    }
-    ```
-
----
-
-## 4. 系統穩定性與錯誤處理 (Robustness & Error Handling)
-
-*   **資料庫連接管理：** 執行資料庫操作時，必須確保連線（Connection）有被正確釋放或關閉（可以使用 `with` 語句、`try-with-resources` 或 `finally` 區塊）。
-*   **交易管理 (Transactions)：** 涉及**訂票、扣款、釋出座位**等需要多表連動更新的邏輯，必須實作 `COMMIT` 與 `ROLLBACK` 機制，確保資料一致性（ACID）。
-*   **拒絕空捕捉：** 禁止寫空置的 `catch` 或 `except: pass`。發生資料庫異常（如外鍵衝突、唯一值重複）時，必須回傳友好的錯誤訊息，不能讓系統直接崩潰或曝露 SQL 錯誤。
+> Files inside `skeleton/` (agent.py, ui.py, llm_provider.py, config.py) are **read-only**
+> unless the team has explicitly agreed to extend the agent or UI for Task 6.
 
 ---
 
-## 5. 特定專案業務邏輯與架構規定 (Project-Specific Constraints & Rules)
+## 2. Git Workflow
 
-為確保資料庫設計與業務邏輯的一致性，需嚴格遵守以下特定條件：
+### Branch naming
 
-1.  **建表與外鍵約束 (Table Creation & FK Constraints)：** 建立資料表 (`CREATE TABLE`) 時，**先不加** `REFERENCES` 限制。等待所有相關資料表皆建立完成後，再統一使用 `ALTER TABLE` 補上外鍵約束，避免依賴順序問題。
-2.  **Payments 表格外鍵放寬 (Payments Table FK)：** 在 `payments` 表格中的 `booking_id` 欄位**不要**加上強硬的 `REFERENCES` 約束，請將其視為純字串的**邏輯外鍵**來處理。
-3.  **地鐵換線時間 (Metro Transfer Time)：** 計算或處理路線時，**不需要考慮**地鐵站內換線的等車時間。
-4.  **AI 供應商統一 (AI Provider)：** 團隊使用的 AI 供應商統一為 **Ollama**，所有相關的配置或程式碼實作應以此為準。
-5.  **車站 ID 格式 (Station ID Format)：** 車站 ID (`station_id`) 的格式如 `"MS01"` 或 `"NR01"`，資料庫欄位型態統一設定為 `VARCHAR(10)`。
-6.  **時刻表與停靠站設計 (Schedules & Stops)：** 關於捷運 (`metro_schedules`) 與火車 (`national_rail_schedules`) 的時刻表及路線停靠站點順序，**必須使用單獨的「停靠站關聯表」**（Stop Relationship Table）來儲存與關聯，不可以直接寫死在時刻表內。
-7.  **密碼與鹽值獨立儲存 (Password & Salt Separation)：** 基於資安最佳實踐，使用者的登入密碼絕對不可與一般基本資料（如姓名、Email 等）混存在同一張主使用者表中。必須額外建立專屬的憑證資料表（例如命名為 `user_credentials`），並透過 `user_id` 作為外鍵與使用者主表關聯。該表必須包含 `password_hash`（經過雜湊處理的密碼）與 `salt`（隨機生成的鹽值）兩個欄位。這樣做的好處是能獨立管理敏感憑證的存取權限，即使一般使用者資料表遭洩漏，也能將密碼外洩的風險降至最低。
+```
+feature/<short-description>     # new feature or function
+fix/<short-description>         # bug fix
+schema/<short-description>      # schema changes only
+docs/<short-description>        # documentation updates
+```
+
+Examples:
+```
+feature/query-cheapest-route
+fix/available-seats-fare-filter
+schema/add-code-column-seat-layouts
+docs/update-code-guidelines
+```
+
+### Commit messages
+
+Use the format: `<type>: <what changed>`
+
+| Type | When to use |
+|------|-------------|
+| `feat` | New function or table added |
+| `fix` | Bug corrected |
+| `schema` | schema.sql changed |
+| `seed` | Seed script changed |
+| `docs` | Documentation only |
+| `refactor` | Code restructured, no behaviour change |
+
+Examples:
+```
+feat: add query_interchange_path to graph queries
+fix: correct hops=0 edge case in query_delay_ripple
+schema: add code column to national_rail_seat_layouts
+seed: fix station_map lookup in seed_metro_schedules
+```
+
+### Pull request rules
+
+- At least one other team member must review before merging into `main`.
+- If `schema.sql` changed, the reviewer must confirm they have reset and reseeded locally.
+- Never force-push to `main`.
+
+### What to commit / what not to commit
+
+| Commit | Do not commit |
+|--------|---------------|
+| Everything inside `databases/` | `.env` (contains credentials) |
+| `skeleton/seed_postgres.py` | `.venv/` folder |
+| `skeleton/seed_neo4j.py` | Any `*.pyc` or `__pycache__/` |
+| `train-mock-data/*.json` | Docker volume data or dump files |
+| This file | Local test scripts not part of the project |
 
 ---
 
-## 6. 輸出成果要求
+## 3. SQL / Schema Conventions
 
-當我提供你專案開發任務時，請遵循以下模式回覆：
-1.  **完整且乾淨的程式碼：** 程式碼內附上**英文註解**，特別是複雜的 SQL 邏輯或資料轉換。
-2.  **串接提醒：** 提醒我這個模組在與其他隊友的程式碼（如前端、資料庫 schema）對接時，有哪些需要注意的參數或主外鍵關聯。
+### Naming
 
-**如果你已完全理解專案的資料庫與編碼規範，請回覆：「資料庫專案規範已載入，請提供您的開發任務、資料庫 Schema 或程式碼。」**
+- Table names: `snake_case`, plural noun — `metro_stations`, `national_rail_schedules`
+- Column names: `snake_case` — `travel_date`, `fare_class`, `booked_at`
+- Constraint names: prefix with type — `pk_`, `fk_`, `uq_`, `chk_`
+  - Example: `pk_metro_schedule_stops`, `chk_payments_single_source`
+- Index names: prefix `idx_` — `idx_policy_documents_embedding`
+
+### Data types
+
+| Data | Type | Never use |
+|------|------|-----------|
+| Fares, amounts | `NUMERIC(10, 2)` | `FLOAT`, `TEXT` |
+| Timestamps with timezone | `TIMESTAMPTZ` | `TIMESTAMP`, `TEXT` |
+| Calendar dates (no time) | `DATE` | `TIMESTAMPTZ` |
+| Boolean flags | `BOOLEAN` | `INT`, `VARCHAR` |
+| Passwords | argon2id hash string | Plain text, MD5, SHA |
+| JSONB flexible config | `JSONB` | `TEXT` |
+
+### Primary key rules
+
+All PK choices must be justified with a comment directly on the PK column:
+
+```sql
+-- SERIAL for static reference/catalog tables
+station_id SERIAL PRIMARY KEY, -- PK: SERIAL; static reference table, sequential INT minimises storage and optimises FK JOIN performance.
+
+-- UUID for sensitive transactional tables
+booking_id UUID PRIMARY KEY DEFAULT gen_random_uuid(), -- PK: UUID; prevents sequential ID guessing on financial transaction records.
+
+-- VARCHAR for domain-defined natural keys
+ticket_type VARCHAR(20) PRIMARY KEY, -- PK: VARCHAR natural key; transit authority defines canonical codes (e.g. 'single', 'day_pass').
+```
+
+### Foreign key rules
+
+Every FK must explicitly declare cascade behaviour — never leave it implicit:
+
+```sql
+-- Child tables that should be cleaned up with the parent
+user_id UUID NOT NULL REFERENCES registered_users(user_id) ON DELETE CASCADE
+
+-- References to master catalogs that must be protected
+schedule_id INT NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE RESTRICT
+```
+
+### Delete strategy
+
+This project uses **hard delete** as the primary strategy:
+
+- `ON DELETE CASCADE`: child/operational tables (payments, credentials, schedule stops)
+- `ON DELETE RESTRICT`: FK references pointing to master catalogs (stations, schedules, ticket types)
+- **Status-based retention** for bookings only: cancellations set `status = 'cancelled'`; rows are never physically deleted to preserve financial audit trails.
+
+This strategy must be documented in a block comment at the top of `schema.sql`.
+
+---
+
+## 4. Python Conventions
+
+### Function naming
+
+```python
+query_*     # read-only SELECT functions (called by the agent)
+execute_*   # write operations — INSERT, UPDATE (booking, cancellation)
+seed_*      # data seeding functions in seed_postgres.py
+_helper     # private helpers — prefix with underscore
+```
+
+### Return types
+
+| Function type | Expected return |
+|---------------|-----------------|
+| `query_` single record | `dict` or `None` — never raise for missing row |
+| `query_` multiple records | `list[dict]` — empty list `[]` if nothing found |
+| `execute_` write operation | `tuple[bool, dict \| str]` — `(True, result)` or `(False, message)` |
+| `seed_*` | `None` — print progress, raise on error |
+
+### Transaction rules
+
+`execute_booking` and `execute_cancellation` must:
+
+1. Open a connection with `autocommit = False`
+2. Wrap all inserts/updates in a single `conn.commit()`
+3. Call `conn.rollback()` inside `except`
+4. Always call `conn.close()` inside `finally`
+
+```python
+conn = psycopg2.connect(PG_DSN)
+conn.autocommit = False
+try:
+    with conn.cursor(...) as cur:
+        # all inserts here
+        conn.commit()   # single commit covers everything
+    return True, result
+except Exception as e:
+    conn.rollback()
+    return False, str(e)
+finally:
+    conn.close()
+```
+
+Never commit the booking before inserting the payment — both must be in the same `conn.commit()`.
+
+### Password hashing
+
+All password operations must use argon2id via the `argon2-cffi` library:
+
+```python
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+
+_ph = PasswordHasher()
+
+# Hashing (register / update password)
+hashed = _ph.hash(plain_text_password)
+
+# Verifying (login)
+try:
+    _ph.verify(stored_hash, plain_text_password)
+except VerifyMismatchError:
+    return None  # wrong password
+```
+
+Plain text, MD5, and SHA passwords score 0 on the assessment regardless of other code quality.
+
+### Idempotency in seed functions
+
+Every `seed_*` function must be safe to re-run. Use `ON CONFLICT DO NOTHING`:
+
+```python
+execute_values(cur,
+    "INSERT INTO metro_stations (...) VALUES %s ON CONFLICT DO NOTHING",
+    rows
+)
+```
+
+---
+
+## 5. Cypher / Neo4j Conventions
+
+### Node labels
+
+| Network | Label | Example |
+|---------|-------|---------|
+| City metro | `MetroStation` | `MERGE (n:Station:MetroStation {station_id: 'MS01'})` |
+| National rail | `NationalRailStation` | `MERGE (n:Station:NationalRailStation {station_id: 'NR01'})` |
+
+> Note: the assessment rubric uses `NationalRailStation` — do not shorten to `RailStation`.
+
+### Relationship types
+
+| Type | Usage | Required property |
+|------|-------|-------------------|
+| `METRO_LINK` | Adjacent metro stations | `travel_time_min` |
+| `RAIL_LINK` | Adjacent national rail stations | `travel_time_min` |
+| `INTERCHANGE_TO` | Cross-network transfer points | `travel_time_min` |
+
+### Idempotency
+
+Always use `MERGE`, never `CREATE`, for nodes and relationships in seed scripts.
+`CREATE` produces duplicates on every re-run; `MERGE` is safe:
+
+```cypher
+-- Correct
+MERGE (n:MetroStation {station_id: $id})
+SET n.name = $name
+
+-- Wrong — creates a new node every re-run
+CREATE (n:MetroStation {station_id: $id, name: $name})
+```
+
+### Query function return shape
+
+Every graph query function must return one of:
+
+```python
+# Single path result
+{
+    "found": True,
+    "path": [{"station_id": "MS01", "name": "Central Square"}, ...],
+    "total_time_min": 14
+}
+
+# Multiple paths
+[
+    [{"from": "MS01", "to": "MS02", "line": "M1", "time_min": 3}, ...],
+    ...
+]
+
+# Ripple / connections list
+[
+    {"station_id": "MS02", "name": "...", "hops_away": 1, "lines_affected": ["M1"]},
+    ...
+]
+```
+
+Always return an empty list `[]` or a `"found": False` dict — never raise an exception for missing paths.
+
+---
+
+## 6. Comment Standards
+
+### When a comment is required
+
+A comment is **required** (not optional) in these cases:
+
+| Situation | Where |
+|-----------|-------|
+| PK type choice (SERIAL / UUID / VARCHAR) | Inline on the PK column in `schema.sql` |
+| Delete strategy explanation | Block comment at top of `schema.sql` |
+| Non-obvious SQL join or subquery | Inline above the relevant SQL line |
+| Workaround for a known issue | Inline with explanation of why |
+| Argon2id password hashing | Inline on `password_hash` column and hash call |
+
+### Comment style
+
+**SQL — block comment for design decisions:**
+```sql
+-- ============================================================
+-- DELETE STRATEGY: Hard delete with CASCADE for child tables,
+-- RESTRICT for master catalogs. Bookings use status-based
+-- retention to preserve financial audit trails.
+-- ============================================================
+```
+
+**SQL — inline comment for column rationale:**
+```sql
+travel_date DATE NOT NULL, -- DATE not TIMESTAMPTZ: only the calendar day is needed; departure_time holds the time component separately.
+```
+
+**Python — explain why, not what:**
+```python
+# Use a separate conn.commit() only after both booking and payment are inserted.
+# If payment insert fails after booking commit, we'd have an orphaned booking
+# with no payment record — violates atomicity requirement.
+conn.commit()
+```
+
+**Python — do not just restate the code:**
+```python
+# Bad: insert the booking
+cur.execute("INSERT INTO bookings ...")
+
+# Good: booking insert must come before payment so booking_id FK is available
+cur.execute("INSERT INTO bookings ...")
+```
+
+### Dead stubs
+
+Every function must either be implemented or explicitly marked as not attempted:
+
+```python
+# Acceptable if not implemented
+def query_something():
+    raise NotImplementedError("query_something not yet implemented")
+
+# Not acceptable — silent empty function
+def query_something():
+    pass
+```
+
+---
+
+## 7. Database Reset Protocol
+
+### When to reset
+
+Reset your local database whenever any of these files changed in a `git pull`:
+
+| Changed file | Action required |
+|--------------|-----------------|
+| `databases/relational/schema.sql` | Full reset (see below) |
+| `skeleton/seed_postgres.py` | Re-run seed only |
+| `databases/graph/seed.cypher` or `skeleton/seed_neo4j.py` | Re-run Neo4j seed |
+| `train-mock-data/*.json` (policy files) | Re-run vector seed |
+
+### Full reset sequence
+
+```bash
+# 1. Wipe all volumes and restart containers
+docker compose down -v && docker compose up -d
+
+# 2. Wait for containers to be healthy
+docker compose ps
+
+# 3. Seed PostgreSQL
+python3 skeleton/seed_postgres.py
+
+# 4. Seed Neo4j
+python3 skeleton/seed_neo4j.py
+
+# 5. Seed vectors (policy documents)
+python3 skeleton/seed_vectors.py
+```
+
+### Before pushing a schema change
+
+1. Reset your own database and confirm seeding completes without errors.
+2. Notify the team in the group chat that `schema.sql` has changed.
+3. All teammates must run the full reset sequence after pulling.
