@@ -255,7 +255,7 @@ def auto_select_adjacent_seats(available_seats: list[dict], count: int) -> list[
 
 def query_user_profile(user_email: str) -> Optional[dict]:
     """Return user profile demographic properties using unique email matching."""
-    sql = "SELECT user_id, code, full_name, email, phone, date_of_birth FROM registered_users WHERE email = %s"
+    sql = "SELECT user_id, code, full_name, email, phone, date_of_birth, EXTRACT(YEAR FROM date_of_birth)::int AS year_of_birth FROM registered_users WHERE email = %s"
     with _connect() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, (user_email,))

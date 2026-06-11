@@ -202,9 +202,7 @@ def query_alternative_routes(
         MATCH (origin:{label} {{station_id: $origin_id}})
         MATCH (dest:{label}   {{station_id: $dest_id}})
         MATCH path = (origin)-[:{rel_type}*1..15]->(dest)
-        WHERE NONE(n IN nodes(path) WHERE n.station_id = $avoid_id
-                   AND n.station_id <> $origin_id
-                   AND n.station_id <> $dest_id)
+        WHERE NONE(n IN nodes(path) WHERE n.station_id = $avoid_id)
         RETURN path
         ORDER BY length(path)
         LIMIT $limit
@@ -311,9 +309,30 @@ def query_delay_ripple(delayed_station_id: str, hops: int = 2) -> list[dict]:
     """
     Find all stations within N hops of a delayed or disrupted station.
     """
+    # Edge case: hops=0 means only the disrupted station itself is affected
+    if hops == 0:
+        with _driver() as driver:
+            with driver.session() as session:
+                result = session.run(
+                    "MATCH (s) WHERE s.station_id = $sid RETURN s",
+                    sid=delayed_station_id,
+                )
+                row = result.single()
+                if not row:
+                    return []
+                n = row["s"]
+                return [{
+                    "station_id":     n["station_id"],
+                    "name":           n["name"],
+                    "hops_away":      0,
+                    "lines_affected": n.get("lines", []),
+                }]
+
     if hops < 0:
         return []
 
+    # Use variable-length path *1..N to find all reachable neighbours within N hops.
+    # shortestPath() inside WITH gives the true hop distance for each neighbour.
     cypher = f"""
         MATCH (source)
         WHERE (source:MetroStation OR source:RailStation)
