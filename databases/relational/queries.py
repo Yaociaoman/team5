@@ -565,7 +565,9 @@ def login_user(email: str, password: str) -> Optional[dict]:
         JOIN user_credentials c ON c.user_id = u.user_id
         WHERE u.email = %s AND u.is_active = TRUE
     """
-    with _connect() as conn:
+    conn = psycopg2.connect(PG_DSN)
+    try:
+    
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, (email,))
             row = cur.fetchone()
@@ -578,6 +580,8 @@ def login_user(email: str, password: str) -> Optional[dict]:
             result = dict(row)
             result.pop("password_hash")   # don't send hash back
             return result
+    finally:
+        conn.close()
 
 
 def get_user_secret_question(email: str) -> Optional[str]:
@@ -609,10 +613,19 @@ def update_password(email: str, new_password: str) -> bool:
         SET password_hash = %s 
         WHERE user_id = (SELECT user_id FROM registered_users WHERE email = %s)
     """
-    with _connect() as conn:
+    conn = psycopg2.connect(PG_DSN)
+    conn.autocommit = False
+    try:
         with conn.cursor() as cur:
             cur.execute(sql, (hashed, email))
-            return cur.rowcount > 0
+            affected = cur.rowcount
+        conn.commit()
+        return affected > 0
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
 
 
 # ── VECTOR / RAG QUERIES — do not modify ─────────────────────────────────────

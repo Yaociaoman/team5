@@ -238,4 +238,14 @@ AI 指出此畫面為 Git 核心機制要求開發者確認合併日誌之標準
 
 **Production difference scoring:** Identifies a concrete production concern with explanation = 2 · Mentions something production-related without depth = 1 · Missing = 0
 
+(一)
+決策一 : 主鍵策略（PostgreSQL）
+我們採用三層式主鍵設計而非統一使用單一型別。靜態參考表（如 metro_stations、national_rail_schedules）使用 SERIAL 整數主鍵，原因是這些表不對外暴露，且被大量 JOIN 操作引用——整數主鍵可縮小索引體積並提升 B-tree 叢集效能。敏感交易表（registered_users、bookings、payments）則改用 UUID，透過 pgcrypto 的 gen_random_uuid() 產生，以防止連續 ID 列舉攻擊並遮蔽業務量。主目錄表（ticket_types、refund_policies）使用 VARCHAR 自然鍵，因為交通主管機關本身就提供官方字串代碼（如 'RF001'、'single'）作為標準識別碼，額外加入代理鍵反而多餘且會破壞應用程式邏輯中的直接引用。
+
+決策二 — Neo4j 雙向關係建模
+我們選擇對每條實體路段明確建立兩條有向關係（A→B 與 B→A），而非使用無向邊。Neo4j 的 Cypher 路徑演算法（如 shortestPath、gds.shortestPath.dijkstra）預設只走有向邊，若採用無向模型則每次查詢時都需要額外處理關係反向，增加複雜度。在 seed 階段就將雙向關係實體化後，最短路徑與票價計算查詢可以保持簡潔一致，不需額外的執行期開銷。代價是關係數量加倍，但對規模有限的交通網路而言影響微乎其微，換來的查詢簡潔性遠大於此成本。
+
+(二)
+在目前的 schema 中，除了 policy_documents 的向量索引之外，我們並未針對其他欄位建立額外索引。在開發與測試規模下這沒有問題，但若進入正式環境，bookings 與 metro_travel_history 這類高頻查詢的交易表就需要補上適當的索引——例如針對 user_id、travel_date、status 等欄位建立複合索引，以支援常見的查詢模式（如查詢某用戶的歷史訂單或特定日期的行程）。缺乏索引在資料量小時不明顯，但正式環境的資料量一旦放大，全表掃描的代價會變得不可接受。
+
 ---
