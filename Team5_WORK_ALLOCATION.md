@@ -40,7 +40,7 @@ or reassigned mid-project).
 | Section 3 — Graph Database Design Rationale | 陳佑瑄 | | |
 | Section 4 — Vector / RAG Design | 陳少畇 | | |
 | Section 5 — AI Tool Usage Evidence | 陳少畇 | | |
-| Section 6 — Reflection & Trade-offs | | | |
+| Section 6 — Reflection & Trade-offs | 陳佑瑄 | | |
 | Section 7 — Optional Extension *(if applicable)* | | | |
 
 ---
@@ -53,7 +53,7 @@ All members must sum to 100%.
 | Member | Estimated % | Brief justification |
 |--------|-----------|---------------------|
 | 陳少畇 | % | 負責最初的relational, graph兩個的queries的架構，後續也幫忙檢測schema內容及seed_postgres.py的內容，也有小小更動neo4j的變數|
-| 陳佑瑄 | % | |
+| 陳佑瑄 | % | 負責圖形資料庫，seed.cypher, see_neo4j.py, Authentication queries、部分的graph/queries.py，也協助修改 schema.sql, relational/queries.py, seed_postgre.py。|
 | 姚喬嫚 | % | |
 | **Total** | **100%** | |
 
