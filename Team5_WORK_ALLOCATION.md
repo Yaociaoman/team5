@@ -22,10 +22,10 @@ or reassigned mid-project).
 | Task | Primary Owner | Supporting Member(s) | Notes |
 |------|--------------|---------------------|-------|
 | **Task 1** — Relational schema design (`schema.sql`) | 姚喬嫚 | 陳少畇 | |
-| **Task 2a** — Core availability & fare queries (`query_national_rail_availability`, `query_metro_schedules`, `query_national_rail_fare`, `query_metro_fare`) | 陳少畇 | | |
-| **Task 2b** — Seat & user queries (`query_available_seats`, `query_user_profile`, `query_user_bookings`, `query_payment_info`) | 陳少畇 | | |
-| **Task 2c** — Write operations (`execute_booking`, `execute_cancellation`) | 陳少畇 | | |
-| **Task 2d** — Authentication queries (`login_user`, `register_user`, `get_user_secret_question`, `verify_secret_answer`, `update_password`) | 陳佑瑄| | |
+| **Task 2a** — Core availability & fare queries (`query_national_rail_availability`, `query_metro_schedules`, `query_national_rail_fare`, `query_metro_fare`) | 陳少畇 | 姚喬嫚 | |
+| **Task 2b** — Seat & user queries (`query_available_seats`, `query_user_profile`, `query_user_bookings`, `query_payment_info`) | 陳少畇 | 姚喬嫚 | |
+| **Task 2c** — Write operations (`execute_booking`, `execute_cancellation`) | 陳少畇 | 姚喬嫚 | |
+| **Task 2d** — Authentication queries (`login_user`, `register_user`, `get_user_secret_question`, `verify_secret_answer`, `update_password`) | 陳佑瑄| 姚喬嫚 | |
 | **Task 3** — PostgreSQL seeding (`seed_postgres.py`) | 姚喬嫚 | 陳少畇 | |
 | **Task 4** — Neo4j graph design & seeding (`seed_neo4j.py`, `seed.cypher`) | 陳佑瑄 | | |
 | **Task 5** — Neo4j query functions (`graph/queries.py`) | 陳少畇 | 陳佑瑄 | |
@@ -54,7 +54,7 @@ All members must sum to 100%.
 |--------|-----------|---------------------|
 | 陳少畇 | % | 負責最初的relational, graph兩個的queries的架構，後續也幫忙檢測schema內容及seed_postgres.py的內容，也有小小更動neo4j的變數|
 | 陳佑瑄 | % | 負責圖形資料庫，seed.cypher, see_neo4j.py, Authentication queries、部分的graph/queries.py，也協助修改 schema.sql, relational/queries.py, seed_postgre.py。|
-| 姚喬嫚 | % | |
+| 姚喬嫚 | % | 負責初期Relational schema design, PostgreSQL seeding的架構設計，後續debug schema, seed_postgres.py和relational queries的內容。|
 | **Total** | **100%** | |
 
 ---

@@ -25,20 +25,71 @@
 
 ## Section 2 — Normalisation Justification · /20
 
-| Criterion | What earns full marks |
-|-----------|-----------------------|
-| Identifies and explains at least one 2NF or 3NF design decision (e.g., why schedule stops are in a junction table rather than an array column) | Identifies a real normalisation decision, names the normal form it achieves, and explains the functional dependency that motivated it |
-| Discusses at least one deliberate de-normalisation trade-off with justification (or explains why full normalisation was preferred) | Either describes a de-normalisation choice with a performance or simplicity rationale, or explicitly argues that full normalisation was appropriate for this system |
-| Discusses password hashing: algorithm chosen, why it was selected over alternatives, how salt is managed | Names the specific algorithm; explains *why* it is preferred over MD5/SHA-1 (cost factor, key stretching); explains how salt prevents rainbow-table attacks |
-| Correct use of database terminology (functional dependency, candidate key, transitive dependency, etc.) | Terms used correctly and precisely, not just as decoration |
-| **Section 2 Total** | |
+2.1 Overview
+This section justifies the normalisation decisions applied to the transit booking database schema. The schema spans relational tables covering users, stations, schedules, bookings, payments, and policy documents. Where applicable, Third Normal Form (3NF) was the primary design target. Key normalisation decisions are explained below using functional dependency notation, and one deliberate de-normalisation trade-off is discussed with performance rationale. Password hashing strategy is addressed in Section 2.4.
 
-**Normalisation scoring (8 marks):** Identifies a real 3NF decision with clear explanation = 7–8 ·
-**Normalisation scoring:** Identifies a real 3NF decision with clear explanation = full marks · Identifies a decision but explanation is shallow = 20% deduction · Mentions normalisation but does not connect to the schema = 70% deduction · Missing = 0
+2.2 Normalisation Decisions
+2.2.1 Schedule Stops as Junction Tables (Achieving 3NF)
+A central design decision was to represent the intermediate stops of a route in dedicated junction tables — metro_schedule_stops and rail_schedule_stops — rather than storing stops as an array column (e.g., stops TEXT[]) directly inside the schedule table. This decision directly achieves Third Normal Form (3NF) and eliminates a repeating group that would violate First Normal Form (1NF).
+Consider the naive un-normalised alternative:
+metro_schedules(schedule_id, line, direction, stops_array, ...)
+In that structure, stops_array is a multi-valued attribute. Querying "which schedules stop at station X?" would require scanning inside arrays — non-atomic and indexable only with specialised operators. Instead, the actual schema uses:
+metro_schedule_stops(schedule_id [FK], station_id [FK], stop_order)
+The functional dependency that motivates this is: (schedule_id, stop_order) → station_id. Neither schedule_id alone nor stop_order alone determines the station — the composite key is required. By isolating this into its own relation, we satisfy 1NF (atomic values), 2NF (no partial dependency on a subset of the key), and 3NF (no transitive dependency). The same pattern is applied to rail_schedule_stops.
 
-**Password hashing scoring:** Names specific algorithm + explains why (not just "it is secure") + explains how salt works = full marks · Names algorithm without rationale = 50% deduction · Mentions hashing without algorithm = 80% deduction · Missing or plain-text = 0
+Design	Normal Form	Problem Eliminated
+stops TEXT[] in schedule	Below 1NF	Repeating group / non-atomic attribute
+metro_schedule_stops junction table	3NF	Partial dependency, non-atomic stop data
+rail_schedule_stops junction table	3NF	Identical fix for national rail routes
 
-> **Tip — password hashing:** Writing "we use argon2id because it is secure" earns 20% marks, not full. You must explain *why* argon2id is preferred over MD5/SHA-1. You must also explain how salt prevents two users with the same password from having the same hash (defeating rainbow-table lookups). Use appropriate examples in your explanation.
+2.2.2 Separating User Credentials from User Profile (Achieving 3NF)
+User authentication data is stored in user_credentials(user_id, password_hash, salt) as a separate table from registered_users(user_id, full_name, email, phone, date_of_birth, ...). This design preserves 3NF while separating authentication data from profile data into distinct security domains. Although password_hash is functionally dependent on user_id, authentication attributes belong to a separate security domain from profile attributes. Separating user_credentials from registered_users improves security isolation, access control, and maintainability while preserving 3NF. More practically, the non-key attribute password_hash belongs to a functionally distinct concept (authentication) from profile attributes such as full_name or date_of_birth. In 3NF, every non-key attribute must depend on the key, the whole key, and nothing but the key. Mixing profile and credential columns in one table violates the spirit of this by co-locating attributes from two different semantic domains.
+The practical benefit is significant: credential data can have different access controls and audit logging than profile data, reducing the blast radius of a data breach. The candidate key of user_credentials is user_id, which is a foreign key referencing registered_users.user_id, enforcing referential integrity.
+
+2.2.3 Policy and Rules Tables (Avoiding Transitive Dependencies)
+Tables such as refund_policies, compensation_rules, and booking_rules each carry their own primary key (policy_id, rule_id, rule_key) and store their respective attributes without redundancy. A de-normalised approach might embed refund policy text directly in the bookings table. This would create a transitive dependency: 
+Functional Dependencies:
+booking_id → ticket_type
+ticket_type → refund_policy_text
+Therefore:
+booking_id → refund_policy_text
+(transitive dependency) 
+By referencing policies by key, the schema avoids update anomalies — changing a refund rule requires editing one row in refund_policies rather than thousands of booking rows.
+
+2.3 Deliberate De-normalisation: Denormalising Booking Snapshot Data
+One deliberate de-normalisation decision is visible in the bookings table, which stores origin_station_id, destination_station_id, ticket_type, fare_class, amount_usd, and departure_time as direct columns, even though most of these values can be derived from the referenced schedule_id and ticket_types tables.
+In a fully normalised schema, bookings might store only (booking_id, user_id, schedule_id, ticket_type, seat_id) — obtaining fare and station data by joining at query time. However, this introduces a temporal correctness problem: schedules and fares change over time. A booking made six months ago at a certain fare must remain a historical record of what was agreed at the time of purchase, not what the current schedule says.
+By snapshotting amount_usd, departure_time, and origin_station_id at booking creation, the system preserves point-in-time accuracy without needing a full audit-log table or slowly-changing-dimension strategy. This is a well-recognised de-normalisation pattern in transactional systems. The trade-off is a modest increase in storage and the risk of stale data if denormalised columns are not populated correctly on insert — mitigated here by NOT NULL constraints on critical columns.
+A similar rationale applies to metro_travel_history, which records stops_travelled and amount_usd at the point of travel, forming an immutable historical ledger. This denormalisation is intentional and does not indicate poor schema design. The redundancy exists to preserve historical business facts and temporal consistency.
+
+2.4 Password Hashing Strategy
+2.4.1 Algorithm: Argon2id
+The user_credentials table stores password_hash VARCHAR(255) and salt VARCHAR(64) as separate columns. The chosen hashing algorithm is Argon2id, the winner of the 2015 Password Hashing Competition and the algorithm recommended by OWASP for new systems as of 2024.
+
+2.4.2 Why Argon2id Over MD5 or SHA-1
+MD5 and SHA-1 are general-purpose cryptographic hash functions, not password hashing functions. Their critical flaw for password storage is speed: a modern GPU can compute billions of MD5 or SHA-1 hashes per second. This makes brute-force and dictionary attacks trivially fast. Argon2id addresses this through two mechanisms:
+•	Memory hardness: Argon2id requires a configurable amount of RAM (e.g., 64 MB) per hash computation. An attacker cannot parallelise cracking across thousands of GPU cores without proportionally multiplying memory — GPU VRAM becomes the bottleneck, not compute.
+•	Configurable time cost (key stretching): The number of iterations is tunable. As hardware improves, the cost factor is increased without changing the algorithm, ensuring the work factor remains computationally expensive over time. MD5/SHA-1 offer no such parameter.
+•	Hybrid resistance: The "id" variant of Argon2 combines data-independent memory access (resisting side-channel attacks) with data-dependent access (resisting time-memory trade-off attacks), offering broader protection than Argon2i or Argon2d alone.
+By contrast, even a salted SHA-1 hash can be cracked in milliseconds per attempt on modern hardware. The OWASP Password Storage Cheat Sheet explicitly deprecates MD5, SHA-1, and unsalted SHA-2 for password storage.
+Algorithm	Speed (GPU)	Memory Hard	Salted	Recommended For Passwords
+MD5	~10 billion/sec	No	No (by default)	No — deprecated
+SHA-1	~8 billion/sec	No	No (by default)	No — deprecated
+bcrypt	~100k/sec	Partial	Built-in	Acceptable (legacy systems)
+Argon2id	~10–100/sec	Yes (tunable)	Built-in or separate	Yes — OWASP recommended
+
+2.4.3 Salt Management and Rainbow Table Prevention
+Argon2id automatically generates a unique random salt and embeds it inside the password hash string. Therefore, password verification does not require manually concatenating password + salt. The salt column is retained only for metadata compatibility and stores the hashing scheme label. The hash stored is computed as:
+password_hash = Argon2id(password) 
+The salt serves a critical security function: it defeats rainbow table attacks. A rainbow table is a precomputed lookup of hash(password) → password for millions of common passwords. Without a salt, if two users choose the password "Password123", they produce the identical hash, and cracking one instantly reveals the other.
+With a unique random salt, the effective input to the hash function becomes "Password123" + "a8f2c91b..." (a unique string per user). Even two users with identical passwords will have completely different stored hashes. An attacker obtaining the database dump must brute-force each account independently, making precomputed tables useless. 
+
+2.5 Summary
+The schema demonstrates principled normalisation up to 3NF across its core relational tables, with deliberate and justified de-normalisation in booking and travel history records for temporal accuracy. Key decisions are:
+•	metro_schedule_stops / rail_schedule_stops: junction tables achieving 3NF by eliminating repeating groups and partial dependencies (FD: (schedule_id, stop_order) → station_id).
+•	user_credentials separation: preserves 3NF while isolating authentication data from profile data in separate security domains.
+•	Booking snapshot de-normalisation: preserves point-in-time accuracy at the cost of minor redundancy.
+•	Argon2id with automatically generated per-user salts: provides memory-hard, key-stretched password hashing that defeats rainbow table attacks and remains future-proof as hardware improves.
 
 ---
 
